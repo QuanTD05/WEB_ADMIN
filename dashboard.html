@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Bảng điều khiển</title>
+</head>
+<body>
+  <h1>Đang kiểm tra quyền truy cập...</h1>
+
+  <script type="module">
+    import { auth, db } from './firebase-config.js';
+    import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-auth.js";
+    import { ref, get } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+
+    onAuthStateChanged(auth, async (user) => {
+      if (!user) {
+        window.location.href = "index.html";
+        return;
+      }
+
+      const roleRef = ref(db, `users/${user.uid}/role`);
+      const snap = await get(roleRef);
+
+      if (!snap.exists()) {
+        alert("Không tìm thấy quyền");
+        return;
+      }
+
+      const role = snap.val();
+      if (role === "staff") {
+        window.location.href = "staff.html";
+      } else if (role === "admin") {
+        window.location.href = "admin.html";
+      } else {
+        alert("Quyền không hợp lệ");
+      }
+    });
+  </script>
+</body>
+</html>

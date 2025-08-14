@@ -1,0 +1,61 @@
+<!-- login.html -->
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Đăng nhập nhân viên</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-auth.js"></script>
+</head>
+<body class="bg-gray-100 flex items-center justify-center h-screen">
+  <div class="bg-white p-8 rounded shadow w-full max-w-sm">
+    <h2 class="text-2xl font-bold mb-4 text-center">Đăng nhập</h2>
+    <form id="loginForm" class="space-y-4">
+      <input id="email" type="email" placeholder="Email" required class="w-full p-2 border rounded" />
+      <input id="password" type="password" placeholder="Mật khẩu" required class="w-full p-2 border rounded" />
+      <button type="submit" class="w-full bg-blue-600 text-white py-2 rounded">Đăng nhập</button>
+      <p id="error" class="text-red-500 text-sm"></p>
+    </form>
+  </div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-app.js";
+    import { getAuth, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-auth.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyBsf_IgEEci-NbSXDGLB7mQZvP_SRGMD6o",
+      authDomain: "appmobile-c561a.firebaseapp.com",
+      projectId: "appmobile-c561a",
+      storageBucket: "appmobile-c561a.appspot.com",
+      messagingSenderId: "75581709372",
+      appId: "1:75581709372:web:484cde5c4141fc7aef3739"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+
+    document.getElementById("loginForm").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const email = document.getElementById("email").value;
+      const password = document.getElementById("password").value;
+      const errorDiv = document.getElementById("error");
+
+signInWithEmailAndPassword(auth, email, password)
+  .then((userCredential) => {
+    const user = userCredential.user;
+
+    // ✅ Lưu ID & Email nhân viên vào localStorage
+    localStorage.setItem("staffId", user.uid);
+    localStorage.setItem("staffEmail", user.email);
+
+    window.location.href = "dashboard.html"; // hoặc staff.html
+  })
+    });
+  </script>
+</body>
+</html>
+
+
+

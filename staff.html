@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <title>Admin Panel - Quản lý</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- Tailwind CDN (nếu chưa có) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    /* Highlight active submenu */
+    #orderSubmenu button.font-semibold {
+      background-color: #e2e8f0;
+    }
+    .scrollable {
+      max-height: 65vh;
+      overflow: auto;
+    }
+  </style>
+</head>
+<body class="bg-gray-100 font-sans leading-relaxed">
+
+  <div class="flex min-h-screen">
+    <!-- Sidebar -->
+    <aside class="w-64 bg-white border-r shadow">
+      <div class="p-4 flex items-center gap-3 border-b">
+        <img id="staffAvatar" src="" alt="Avatar" class="w-10 h-10 rounded-full object-cover" />
+        <div>
+          <div id="staffName" class="font-bold text-lg">Admin</div>
+          <div class="text-sm text-gray-600">Nhân viên</div>
+        </div>
+        <button onclick="logoutAdmin()" class="ml-2 bg-red-500 text-white px-3 py-1 rounded text-sm">Đăng xuất</button>
+
+      </div>
+
+      <div id="adminPanelWrapper" class="p-4 space-y-2">
+        <h1 id="panelTitle" class="text-xl font-bold mb-2">Nhân viên</h1>
+
+        <!-- Filter đơn hàng chung -->
+        <div class="mb-4">
+          <input id="orderSearchInput" placeholder="Tìm theo mã đơn / người nhận" class="w-full border p-2 rounded" />
+          <button onclick="applyAdminFilter()" class="mt-2 w-full bg-blue-600 text-white px-4 py-2 rounded">Lọc đơn</button>
+        </div>
+
+        <!-- Menu -->
+        <div class="space-y-1">
+         
+
+
+          <!-- Quản lý đơn hàng với submenu -->
+          <div class="relative">
+            <button id="orderMenuToggle" onclick="toggleOrderSubmenu()" class="flex justify-between w-full text-left px-4 py-2 hover:bg-gray-200 rounded">
+              📦 Quản lý đơn hàng
+              <span id="orderMenuArrow">▾</span>
+            </button>
+            <div id="orderSubmenu" class="ml-2 mt-1 space-y-1 hidden">
+              <button onclick="showOrderCategory('pending')" data-filter="pending" class="block w-full text-left px-4 py-1 rounded hover:bg-gray-200">Đơn chờ xử lý</button>
+              <button onclick="showOrderCategory('ondelivery')" data-filter="ondelivery" class="block w-full text-left px-4 py-1 rounded hover:bg-gray-200">Đang giao</button>
+              <button onclick="showOrderCategory('completed')" data-filter="completed" class="block w-full text-left px-4 py-1 rounded hover:bg-gray-200">Đã giao</button>
+              <button onclick="showOrderCategory('return_requested')" data-filter="return_requested" class="block w-full text-left px-4 py-1 rounded hover:bg-gray-200">Yêu cầu hoàn trả</button>
+              <button onclick="showOrderCategory('returned')" data-filter="returned" class="block w-full text-left px-4 py-1 rounded hover:bg-gray-200">Hoàn trả thành công</button>
+              <button onclick="showOrderCategory('all')" data-filter="all" class="block w-full text-left px-4 py-1 rounded hover:bg-gray-200">Tất cả</button>
+            </div>
+          </div>
+        </div>
+         <button onclick="showSection('users')" class="block w-full text-left px-4 py-2 hover:bg-gray-200 rounded">👤 Quản lý người dùng</button>
+          <button onclick="showSection('products')" class="block w-full text-left px-4 py-2 hover:bg-gray-200 rounded">🛍 Quản lý sản phẩm</button>
+           <button onclick="showSection('banners')" class="block w-full text-left px-4 py-2 hover:bg-gray-200 rounded">🖼 Quản lý banner</button>
+                <button onclick="showSection('chat')" class="block w-full text-left px-4 py-2 hover:bg-gray-200 rounded">💬 Chat khách hàng</button>
+      </div>
+    </aside>
+
+    <!-- Main content -->
+    <div class="flex-1 p-6 overflow-auto">
+      <section id="banners" class="mb-8">
+  <h2 class="text-2xl font-bold mb-4">🖼 Quản lý banner</h2>
+
+  <!-- Form thêm/sửa banner -->
+  <div class="mb-4">
+    <input type="file" id="bannerImageFile" class="border p-2 w-full rounded mb-2" accept="image/*">
+    <div class="flex gap-2">
+      <button id="btnAddBanner" onclick="addBanner()" class="bg-green-600 text-white px-4 py-2 rounded">Thêm banner</button>
+      <button id="btnUpdateBanner" onclick="updateBanner()" class="hidden bg-blue-500 text-white px-4 py-2 rounded">Cập nhật banner</button>
+    </div>
+  </div>
+
+  <!-- Danh sách banner -->
+  <div class="overflow-auto">
+    <table class="w-full table-auto border">
+      <thead class="bg-gray-200">
+        <tr>
+          <th class="p-2 border">Hình ảnh</th>
+          <th class="p-2 border">Hành động</th>
+        </tr>
+      </thead>
+      <tbody id="bannerList"></tbody>
+    </table>
+  </div>
+</section>
+      <!-- Người dùng -->
+      <section id="users" class="mb-8 hidden">
+        <h2 class="text-2xl font-bold mb-4">👤 Quản lý người dùng</h2>
+        <div class="mb-4 flex gap-2">
+          <button onclick="openUserForm()" class="bg-green-600 text-white px-4 py-2 rounded">Thêm người dùng</button>
+        </div>
+        <div class="overflow-auto">
+          <table class="w-full table-auto border">
+            <thead class="bg-gray-200">
+              <tr>
+                <th class="p-2 border">Họ tên</th>
+                <th class="p-2 border">Email</th>
+                <th class="p-2 border">Số điện thoại</th>
+                <th class="p-2 border">Vai trò</th>
+                <th class="p-2 border">Hành động</th>
+              </tr>
+            </thead>
+            <tbody id="userTableBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Sản phẩm -->
+      <section id="products" class="mb-8 hidden">
+        <h2 class="text-2xl font-bold mb-4">🛍 Quản lý sản phẩm</h2>
+        <div class="mb-4 flex gap-2">
+          <button onclick="openAddForm()" class="bg-green-600 text-white px-4 py-2 rounded">Thêm sản phẩm</button>
+        </div>
+        <div class="overflow-auto">
+          <table class="w-full table-auto border">
+            <thead class="bg-gray-200">
+              <tr>
+                <th class="p-2 border">Ảnh</th>
+                <th class="p-2 border">Tên</th>
+                <th class="p-2 border">Danh mục</th>
+                <th class="p-2 border">Biến thể</th>
+                <th class="p-2 border">Đánh giá</th>
+            
+                <th class="p-2 border">Hành động</th>
+              </tr>
+            </thead>
+            <tbody id="productTableBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Đơn hàng -->
+      <section id="orders" class="hidden">
+        <h2 class="text-2xl font-bold mb-4">📦 Quản lý đơn hàng</h2>
+
+        <!-- Nhóm từng trạng thái -->
+        <div id="group_pending" class="mb-8">
+          <h3 class="text-xl font-semibold mb-2">📆 Đơn chờ xử lý</h3>
+          <div class="overflow-auto scrollable">
+            <table class="w-full table-auto border mb-2">
+              <thead class="bg-gray-200">
+                <tr>
+                  <th class="p-2 border">Mã đơn</th>
+                  <th class="p-2 border">Người nhận</th>
+                  <th class="p-2 border">Địa chỉ</th>
+                  <th class="p-2 border">Tổng tiền</th>
+                  <th class="p-2 border">Ngày đặt hàng</th>
+                  <th class="p-2 border">Chi tiết</th>
+                  <th class="p-2 border">Hành động</th>
+                  <th class="p-2 border">Trạng thái</th>
+                </tr>
+              </thead>
+              <tbody id="pendingTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div id="group_ondelivery" class="mb-8">
+          <h3 class="text-xl font-semibold mb-2">🚚 Đang giao</h3>
+          <div class="overflow-auto scrollable">
+            <table class="w-full table-auto border mb-2">
+              <thead class="bg-gray-200">
+                <tr>
+                  <th class="p-2 border">Mã đơn</th>
+                  <th class="p-2 border">Người nhận</th>
+                  <th class="p-2 border">Địa chỉ</th>
+                  <th class="p-2 border">Tổng tiền</th>
+                  <th class="p-2 border">Ngày đặt hàng</th>
+                  <th class="p-2 border">Chi tiết</th>
+                  <th class="p-2 border">Hành động</th>
+                  <th class="p-2 border">Trạng thái</th>
+                </tr>
+              </thead>
+              <tbody id="shippingTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div id="group_completed" class="mb-8">
+          <h3 class="text-xl font-semibold mb-2">✅ Đã giao</h3>
+          <div class="overflow-auto scrollable">
+            <table class="w-full table-auto border mb-2">
+              <thead class="bg-gray-200">
+                <tr>
+                  <th class="p-2 border">Mã đơn</th>
+                  <th class="p-2 border">Người nhận</th>
+                  <th class="p-2 border">Địa chỉ</th>
+                  <th class="p-2 border">Tổng tiền</th>
+                  <th class="p-2 border">Ngày đặt hàng</th>
+                  <th class="p-2 border">Chi tiết</th>
+                  <th class="p-2 border">Hành động</th>
+                  <th class="p-2 border">Trạng thái</th>
+                </tr>
+              </thead>
+              <tbody id="completedTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div id="group_return_requested" class="mb-8">
+          <h3 class="text-xl font-semibold mb-2">🔄 Yêu cầu hoàn trả</h3>
+          <div class="overflow-auto scrollable">
+            <table class="w-full table-auto border mb-2">
+              <thead class="bg-gray-200">
+                <tr>
+                  <th class="p-2 border">Mã đơn</th>
+                  <th class="p-2 border">Người nhận</th>
+                  <th class="p-2 border">Địa chỉ</th>
+                  <th class="p-2 border">Tổng tiền</th>
+                  <th class="p-2 border">Ngày đặt hàng</th>
+                  <th class="p-2 border">Chi tiết</th>
+                  <th class="p-2 border">Hành động</th>
+                  <th class="p-2 border">Trạng thái</th>
+                </tr>
+              </thead>
+              <tbody id="returnRequestedTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div id="group_returned" class="mb-8">
+          <h3 class="text-xl font-semibold mb-2">↩️ Hoàn trả thành công</h3>
+          <div class="overflow-auto scrollable">
+            <table class="w-full table-auto border mb-2">
+              <thead class="bg-gray-200">
+                <tr>
+                  <th class="p-2 border">Mã đơn</th>
+                  <th class="p-2 border">Người nhận</th>
+                  <th class="p-2 border">Địa chỉ</th>
+                  <th class="p-2 border">Tổng tiền</th>
+                  <th class="p-2 border">Ngày đặt hàng</th>
+                  <th class="p-2 border">Chi tiết</th>
+                  <th class="p-2 border">Hành động</th>
+                  <th class="p-2 border">Trạng thái</th>
+                </tr>
+              </thead>
+              <tbody id="returnedTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div id="group_cancelled" class="mb-8">
+          <h3 class="text-xl font-semibold mb-2">❌ Đơn đã huỷ</h3>
+          <div class="overflow-auto scrollable">
+            <table class="w-full table-auto border mb-2">
+              <thead class="bg-gray-200">
+                <tr>
+                  <th class="p-2 border">Mã đơn</th>
+                  <th class="p-2 border">Người nhận</th>
+                  <th class="p-2 border">Địa chỉ</th>
+                  <th class="p-2 border">Tổng tiền</th>
+                  <th class="p-2 border">Ngày đặt hàng</th>
+                  <th class="p-2 border">Chi tiết</th>
+                  <th class="p-2 border">Trạng thái</th>
+                </tr>
+              </thead>
+              <tbody id="canceledTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+
+
+
+
+<!-- Chat khách hàng -->
+<section id="chat">
+  <h2 class="text-2xl font-bold mb-4">💬 Chat khách hàng</h2>
+  <div class="flex gap-4 h-[600px]">
+    <!-- Danh sách người dùng -->
+    <div id="chatUserList" class="w-1/4 bg-white border rounded p-4 overflow-y-auto shadow">
+      <h3 class="font-semibold text-gray-700 mb-2">Danh sách khách hàng</h3>
+       <div id="userList" class="flex-1 space-y-2 overflow-y-auto"></div>
+    </div>
+
+    <!-- Khung chat -->
+    <div class="w-3/4 bg-white border rounded p-4 flex flex-col shadow">
+      <h3 id="chatTarget" class="text-lg font-semibold mb-3">💬 Chọn người dùng để chat</h3>
+      
+      <!-- Tin nhắn -->
+      <div id="chatMessages" class="flex-1 overflow-y-auto bg-gray-100 p-3 rounded space-y-2 border"></div>
+
+      <!-- Nhập tin nhắn -->
+      <div class="mt-3 flex gap-2">
+        <input id="chatInput" type="text" placeholder="Nhập tin nhắn..." class="flex-1 border px-3 py-2 rounded" />
+        <input type="file" id="chatImageInput" class="hidden" accept="image/*" />
+        <button onclick="document.getElementById('chatImageInput').click()" class="bg-gray-200 px-3 py-2 rounded">📷</button>
+        <button onclick="sendChatMessage()" class="bg-blue-600 text-white px-4 py-2 rounded">Gửi</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+    <section id="search" class="hidden">
+      <h2 class="text-2xl font-bold mb-4">🔍 Tra cứu & Quản lý khách hàng</h2>
+      <div class="flex items-center gap-2 mb-4">
+        <input id="searchInput" type="text" placeholder="Nhập email hoặc số điện thoại..." class="w-1/3 p-2 border rounded" />
+        <button onclick="filterCustomers()" class="bg-blue-600 text-white px-4 py-2 rounded">Tìm</button>
+        <button onclick="openUserForm()" class="bg-green-600 text-white px-4 py-2 rounded">+ Thêm khách hàng</button>
+      </div>
+      <div class="overflow-x-auto bg-white rounded shadow">
+        <table class="w-full text-left table-auto">
+          <thead class="bg-gray-200">
+            <tr>
+              <th class="p-2 border">Họ tên</th>
+              <th class="p-2 border">Email</th>
+              <th class="p-2 border">SĐT</th>
+              <th class="p-2 border">Vai trò</th>
+              <th class="p-2 border">Hành động</th>
+            </tr>
+          </thead>
+          <tbody id="userTableBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="products" class="hidden">
+      <h2 class="text-2xl font-bold mb-4">🛒 Quản lý sản phẩm</h2>
+      <button onclick="openAddForm()" class="bg-green-600 text-white px-4 py-2 rounded mb-4">+ Thêm sản phẩm</button>
+      <button onclick="addDemoProducts()" class="bg-blue-600 text-white px-4 py-2 rounded mb-4 ml-2">🧪 Tạo sản phẩm mẫu</button>
+
+      <div class="bg-white shadow rounded overflow-x-auto">
+        <table class="w-full table-auto text-left">
+            <thead class="bg-gray-200">
+              <tr>
+                <th class="p-2 border">Ảnh</th>
+                <th class="p-2 border">Tên</th>
+                <th class="p-2 border">Danh mục</th>
+                <th class="p-2 border">Số lượng</th>
+                <th class="p-2 border">Đánh giá</th>
+                <th class="p-2 border">Trạng thái</th>
+                <th class="p-2 border">Hành động</th>
+              </tr>
+            </thead>
+
+          <tbody id="productTableBody"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+<!-- Form sản phẩm -->
+<div id="productFormModal" class="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center hidden z-50">
+  <div class="bg-white p-6 rounded w-full max-w-3xl">
+    <h2 class="text-xl font-bold mb-4">Thêm / Sửa sản phẩm</h2>
+    <form id="productForm">
+      <input type="hidden" id="editId">
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="block font-medium">Tên sản phẩm</label>
+          <input id="name" type="text" class="w-full border p-2 rounded" required />
+        </div>
+        <div>
+          <label class="block font-medium">Danh mục</label>
+          <input id="categoryId" type="text" class="w-full border p-2 rounded" />
+        </div>
+        <div class="col-span-2">
+          <label class="block font-medium">Hình ảnh chính</label>
+          <input id="imageFile" type="file" accept="image/*" class="w-full border p-2 rounded" />
+        </div>
+      </div>
+
+      <div class="mt-6">
+        <label class="block font-semibold mb-2">Biến thể sản phẩm</label>
+        <div id="variantsContainer" class="space-y-2">
+          <!-- Dòng biến thể sẽ được thêm ở đây -->
+        </div>
+        <button type="button" onclick="addVariantRow()" class="mt-2 bg-blue-100 text-blue-800 px-3 py-1 rounded">+ Thêm biến thể</button>
+      </div>
+
+      <div class="mt-6 text-right">
+        <button type="button" onclick="closeForm()" class="bg-gray-500 text-white px-4 py-2 rounded mr-2">Hủy</button>
+        <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded">Lưu</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+function addVariantRow() {
+  const container = document.getElementById("variantsContainer");
+  const row = document.createElement("div");
+  row.className = "grid grid-cols-5 gap-2 items-center";
+
+  row.innerHTML = `
+    <input name="size" placeholder="Kích thước (VD: 1m2)" class="p-2 border rounded" required />
+    <input name="color" placeholder="Màu (VD: Trắng)" class="p-2 border rounded" required />
+    <input name="qty" type="number" placeholder="SL" class="p-2 border rounded" required />
+    <input name="vprice" type="number" placeholder="Giá (VND)" class="p-2 border rounded" required />
+    <input name="vimage" type="file" accept="image/*" class="p-2 border rounded" />
+    <button type="button" onclick="this.parentElement.remove()" class="text-red-600">✖</button>
+  `;
+
+  container.appendChild(row);
+}
+</script>
+
+
+  <!-- Form khách hàng -->
+  <div id="userFormModal" class="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center hidden z-50">
+    <div class="bg-white p-6 rounded w-full max-w-lg">
+      <h2 class="text-xl font-bold mb-4">Thêm / Sửa khách hàng</h2>
+      <form id="userForm">
+        <input type="hidden" id="userId">
+        <div class="space-y-3">
+          <input id="fullName" class="w-full p-2 border rounded" placeholder="Họ tên" required />
+          <input id="email" class="w-full p-2 border rounded" placeholder="Email" required />
+          <input id="phone" class="w-full p-2 border rounded" placeholder="SĐT" required />
+          <input id="password" type="text" class="w-full p-2 border rounded" placeholder="Mật khẩu" required />
+          <select id="role" class="w-full p-2 border rounded">
+            <option value="user">Khách hàng</option>
+            <option value="admin">Quản trị</option>
+          </select>
+        </div>
+        <div class="text-right mt-4">
+          <button type="button" onclick="closeUserForm()" class="bg-gray-500 text-white px-4 py-2 rounded mr-2">Hủy</button>
+          <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded">Lưu</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script type="module" src="staff.js"></script>
+  <script type="module" src="staff.js"></script>
+
+
+  <script>
+    function showSection(id) {
+      document.querySelectorAll('main section').forEach(sec => sec.classList.add('hidden'));
+      document.getElementById(id).classList.remove('hidden');
+    }
+    function logout() {
+      alert("Đăng xuất thành công!");
+    }
+  </script>
+  <script>
+// Hiển thị section (giữ lại, chỉ cần 1 bản)
+
+
+// Đăng xuất: xoá session (staffId), hỏi xác nhận, và reload hoặc chuyển về login
+function logout() {
+  if (!confirm("Bạn có chắc chắn muốn đăng xuất không?")) return;
+
+  localStorage.clear();  // Xoá token, user info nếu có
+  sessionStorage.clear();
+  alert('Bạn đã đăng xuất!');
+  window.location.href = 'login.html'; ;
+}
+
+
+  // Mặc định hiển thị quản lý đơn hàng khi vừa đăng nhập
+  document.addEventListener('DOMContentLoaded', () => {
+    showSection('orders');
+  });
+</script>
+
+</body>
+</html>
