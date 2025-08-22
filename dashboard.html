@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="vi">
 <head>
   <meta charset="UTF-8">
   <title>Bảng điều khiển</title>
@@ -9,8 +9,8 @@
 
   <script type="module">
     import { auth, db } from './firebase-config.js';
-    import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-auth.js";
-    import { ref, get } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+    import { onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-auth.js";
+    import { ref, get, update, onDisconnect } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 
     onAuthStateChanged(auth, async (user) => {
       if (!user) {
@@ -26,6 +26,16 @@
         return;
       }
 
+      // ✅ Set status online
+      const statusRef = ref(db, `users/${user.uid}/status`);
+      await update(ref(db, `users/${user.uid}`), { status: true });
+      onDisconnect(statusRef).set(false);
+
+      // Nếu user tắt tab → offline
+      window.addEventListener("beforeunload", () => {
+        update(ref(db, `users/${user.uid}`), { status: false });
+      });
+
       const role = snap.val();
       if (role === "staff") {
         window.location.href = "staff.html";
@@ -33,6 +43,8 @@
         window.location.href = "admin.html";
       } else {
         alert("Quyền không hợp lệ");
+        await signOut(auth);
+        window.location.href = "index.html";
       }
     });
   </script>

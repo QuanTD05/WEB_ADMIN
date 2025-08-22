@@ -25,11 +25,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 
 // Firebase Database
 import {
-  getDatabase,
-  ref,
-  onValue,
-  update,
-  remove
+ getDatabase, ref, set, update, remove, onValue, push 
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 
 // Firebase Storage
@@ -1396,6 +1392,8 @@ document.getElementById("btnSearch").addEventListener("click", () => {
 //   + input #editCode, #editDesc, #editDiscount, #editStart, #editEnd, checkbox #editActive, #editApplyAll
 //   + container danh sách sp: <div id="editProductList"></div>
 // === QUẢN LÝ KHUYẾN MÃI (FULL) ===
+// === QUẢN LÝ KHUYẾN MÃI (ĐỒNG BỘ VỚI JAVA) ===
+// === QUẢN LÝ KHUYẾN MÃI (ĐỒNG BỘ VỚI JAVA) ===
 const promoTableBody = document.getElementById("promoTableBody");
 const promoSearchInput = document.getElementById("promoSearchInput");
 
@@ -1442,7 +1440,7 @@ async function renderProductChooser(containerSelector, checkboxClass, preSelecte
     : `<div class="text-muted">Chưa có sản phẩm.</div>`;
 }
 
-// Bật "Áp dụng tất cả" -> chỉ disable checkbox & mờ vùng chọn (KHÔNG tự uncheck)
+// Bật "Áp dụng tất cả" -> chỉ disable checkbox & mờ vùng chọn
 function toggleChooserByApplyAll(isApplyAll, containerSelector, checkboxClass) {
   const wrap = document.querySelector(containerSelector);
   if (!wrap) return;
@@ -1541,19 +1539,51 @@ document.getElementById("promoForm")?.addEventListener("submit", async (e) => {
     apply_to_product_ids: apply_to_all ? null : apply_to_product_ids,
   };
 
-  update(ref(db, `promotions/${code}`), data)
-    .then(() => {
-      alert("✅ Thêm khuyến mãi thành công!");
-      e.target.reset();
+  try {
+    // Ghi khuyến mãi
+    await update(ref(db, `promotions/${code}`), data);
 
-      // reset vùng chọn theo trạng thái mặc định (applyAll đang checked theo UI của bạn)
-      const applyAllEl = document.getElementById("applyAll");
-      toggleChooserByApplyAll(applyAllEl?.checked, "#addProductList", "productCheckbox");
+    // ⭐ Đồng bộ với Java: push thông báo
+    let product_names_text = "TẤT CẢ sản phẩm";
+    if (!apply_to_all && Array.isArray(apply_to_product_ids) && apply_to_product_ids.length > 0) {
+      const names = apply_to_product_ids.map((id) => productsCache.get(id) || id);
+      if (names.length === 1) {
+        product_names_text = names[0];
+      } else if (names.length <= 3) {
+        product_names_text = names.join(", ");
+      } else {
+        product_names_text = `${names.slice(0, 2).join(", ")} +${names.length - 2} sản phẩm`;
+      }
+    }
 
-      bootstrap.Modal.getInstance(document.getElementById("addPromoModal"))?.hide();
-      loadPromotions();
-    })
-    .catch((err) => alert("Lỗi khi thêm khuyến mãi: " + err.message));
+    const notifRef = push(ref(db, "notifications"));
+    await set(notifRef, {
+      title: "🎁 Khuyến mãi mới!",
+      message: `Mã: ${code} - ${description} (${discount}%)\nÁp dụng: ${product_names_text}\nHiệu lực: ${start_date} → ${end_date}`,
+      type: "promo",
+      timestamp: Date.now(),
+      code,
+      discount,
+      apply_to_all,
+      apply_to_product_ids: apply_to_all ? null : apply_to_product_ids,
+      start_date,
+      end_date,
+      product_names: apply_to_all ? null : apply_to_product_ids.map((id) => productsCache.get(id) || id),
+      product_names_text
+    });
+
+    alert("✅ Thêm khuyến mãi thành công!");
+    e.target.reset();
+
+    // reset vùng chọn
+    const applyAllEl = document.getElementById("applyAll");
+    toggleChooserByApplyAll(applyAllEl?.checked, "#addProductList", "productCheckbox");
+
+    bootstrap.Modal.getInstance(document.getElementById("addPromoModal"))?.hide();
+    loadPromotions();
+  } catch (err) {
+    alert("Lỗi khi thêm khuyến mãi: " + err.message);
+  }
 });
 
 // Khởi tạo vùng chọn sản phẩm trong modal Thêm

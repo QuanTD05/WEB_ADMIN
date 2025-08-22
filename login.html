@@ -1,4 +1,3 @@
-<!-- login.html -->
 <!DOCTYPE html>
 <html lang="vi">
 <head>
@@ -30,32 +29,32 @@
       projectId: "appmobile-c561a",
       storageBucket: "appmobile-c561a.appspot.com",
       messagingSenderId: "75581709372",
-      appId: "1:75581709372:web:484cde5c4141fc7aef3739"
+      appId: "1:75581709372:web:484cde5c4141fc7aef3739",
+      databaseURL: "https://appmobile-c561a-default-rtdb.firebaseio.com/"
     };
 
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
 
-    document.getElementById("loginForm").addEventListener("submit", (e) => {
+    document.getElementById("loginForm").addEventListener("submit", async (e) => {
       e.preventDefault();
-      const email = document.getElementById("email").value;
-      const password = document.getElementById("password").value;
+      const email = document.getElementById("email").value.trim();
+      const password = document.getElementById("password").value.trim();
       const errorDiv = document.getElementById("error");
 
-signInWithEmailAndPassword(auth, email, password)
-  .then((userCredential) => {
-    const user = userCredential.user;
+      try {
+        const userCredential = await signInWithEmailAndPassword(auth, email, password);
+        const user = userCredential.user;
 
-    // ✅ Lưu ID & Email nhân viên vào localStorage
-    localStorage.setItem("staffId", user.uid);
-    localStorage.setItem("staffEmail", user.email);
+        // Lưu UID vào localStorage để dashboard xử lý status
+        localStorage.setItem("staffId", user.uid);
+        localStorage.setItem("staffEmail", user.email);
 
-    window.location.href = "dashboard.html"; // hoặc staff.html
-  })
+        window.location.href = "dashboard.html";
+      } catch (error) {
+        errorDiv.textContent = "Sai email hoặc mật khẩu!";
+      }
     });
   </script>
 </body>
 </html>
-
-
-
