@@ -162,7 +162,8 @@
         <a class="nav-link" href="javascript:void(0)" onclick="showSection('users')">👤 Quản lý Nhân viên</a>
         <a class="nav-link" href="javascript:void(0)" onclick="showSection('products')">🛍 Quản lý sản phẩm</a>
          <a class="nav-link" href="javascript:void(0)" onclick="showSection('banners')">🖼 Quản lý banner</a>
-       
+        <a class="nav-link" href="javascript:void(0)" onclick="activateNav(this);showSection('inventory')">📦 Quản lý kho hàng</a>
+
         <!-- Quản lý đơn hàng với submenu -->
         <div class="mt-2">
           <button class="nav-link d-flex justify-content-between align-items-center" id="orderMenuToggle" onclick="toggleOrderSubmenu()">
@@ -256,13 +257,13 @@
         <div class="col-md-4">
           <div class="top-box">
             <h4>Doanh thu theo tuần</h4>
-            <canvas id="weeklyRevenueChart" height="200"></canvas>
+            <canvas id="weeklyRevenueChart" height="300"></canvas>
           </div>
         </div>
         <div class="col-md-4">
           <div class="top-box">
             <h4>Doanh thu theo tháng</h4>
-            <canvas id="monthlyRevenueChart" height="200"></canvas>
+            <canvas id="monthlyRevenueChart" height="300"></canvas>
           </div>
         </div>
         <div class="col-md-4">
@@ -358,6 +359,25 @@
     </div>
   </div>
 </div>
+<section id="inventory">
+  <h3>📦 Quản lý kho hàng</h3>
+  <input type="text" id="inventorySearchInput" onkeyup="filterInventory()" placeholder="Tìm kiếm sản phẩm..." class="form-control mb-3"/>
+  <table class="table table-bordered table-striped">
+    <thead>
+      <tr>
+        <th>Ảnh</th>
+        <th>Sản phẩm</th>
+        <th>Tồn kho</th>
+        <th>Trạng thái</th>
+        <th>Hành động</th>
+      </tr>
+    </thead>
+    <tbody id="inventoryTableBody"></tbody>
+  </table>
+</section>
+
+
+
 
 
     <!-- Sản phẩm -->

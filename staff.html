@@ -131,6 +131,7 @@
           <table class="w-full table-auto border">
             <thead class="bg-gray-200">
               <tr>
+                <th class="p-2 border">Avatar</th>
                 <th class="p-2 border">Họ tên</th>
                 <th class="p-2 border">Email</th>
                 <th class="p-2 border">Số điện thoại</th>
@@ -144,28 +145,28 @@
       </section>
 
       <!-- Sản phẩm -->
-      <section id="products" class="mb-8 hidden">
-        <h2 class="text-2xl font-bold mb-4">🛍 Quản lý sản phẩm</h2>
-        <div class="mb-4 flex gap-2">
-          <button onclick="openAddForm()" class="bg-green-600 text-white px-4 py-2 rounded">Thêm sản phẩm</button>
-        </div>
-        <div class="overflow-auto">
-          <table class="w-full table-auto border">
-            <thead class="bg-gray-200">
-              <tr>
-                <th class="p-2 border">Ảnh</th>
-                <th class="p-2 border">Tên</th>
-                <th class="p-2 border">Danh mục</th>
-                <th class="p-2 border">Biến thể</th>
-                <th class="p-2 border">Đánh giá</th>
-            
-                <th class="p-2 border">Hành động</th>
-              </tr>
-            </thead>
-            <tbody id="productTableBody"></tbody>
-          </table>
-        </div>
-      </section>
+<section id="products" class="mb-8 hidden">
+  <h2 class="text-2xl font-bold mb-4">🛍 Quản lý sản phẩm</h2>
+  <div class="mb-4 flex gap-2">
+    <button onclick="openAddForm()" class="bg-green-600 text-white px-4 py-2 rounded">Thêm sản phẩm</button>
+  </div>
+  <div class="overflow-auto">
+    <table class="w-full table-auto border">
+      <thead class="bg-gray-200">
+        <tr>
+          <th class="p-2 border">Ảnh</th>
+          <th class="p-2 border">Tên</th>
+          <th class="p-2 border">Danh mục</th>
+          <th class="p-2 border">Biến thể</th>
+          <th class="p-2 border">Đánh giá</th>
+          <th class="p-2 border">Hành động</th>
+        </tr>
+      </thead>
+      <tbody id="productTableBody"></tbody>
+    </table>
+  </div>
+</section>
+
 
       <!-- Đơn hàng -->
       <section id="orders" class="hidden">
@@ -354,67 +355,66 @@
       </div>
     </section>
 
-    <section id="products" class="hidden">
-      <h2 class="text-2xl font-bold mb-4">🛒 Quản lý sản phẩm</h2>
-      <button onclick="openAddForm()" class="bg-green-600 text-white px-4 py-2 rounded mb-4">+ Thêm sản phẩm</button>
-      <button onclick="addDemoProducts()" class="bg-blue-600 text-white px-4 py-2 rounded mb-4 ml-2">🧪 Tạo sản phẩm mẫu</button>
+    <section id="products" class="mb-8 hidden">
+  <h2 class="text-2xl font-bold mb-4">🛍 Quản lý sản phẩm</h2>
+  <div class="mb-4 flex gap-2">
+    <button onclick="openAddForm()" class="bg-green-600 text-white px-4 py-2 rounded">Thêm sản phẩm</button>
+  </div>
+  <div class="overflow-auto">
+    <table class="w-full table-auto border">
+      <thead class="bg-gray-200">
+        <tr>
+          <th class="p-2 border">Ảnh</th>
+          <th class="p-2 border">Tên</th>
+          <th class="p-2 border">Danh mục</th>
+          <th class="p-2 border">Biến thể</th>
+          <th class="p-2 border">Đánh giá</th>
+          <th class="p-2 border">Hành động</th>
+        </tr>
+      </thead>
+      <tbody id="productTableBody"></tbody>
+    </table>
+  </div>
+</section>
 
-      <div class="bg-white shadow rounded overflow-x-auto">
-        <table class="w-full table-auto text-left">
-            <thead class="bg-gray-200">
-              <tr>
-                <th class="p-2 border">Ảnh</th>
-                <th class="p-2 border">Tên</th>
-                <th class="p-2 border">Danh mục</th>
-                <th class="p-2 border">Số lượng</th>
-                <th class="p-2 border">Đánh giá</th>
-                <th class="p-2 border">Trạng thái</th>
-                <th class="p-2 border">Hành động</th>
-              </tr>
-            </thead>
-
-          <tbody id="productTableBody"></tbody>
-        </table>
-      </div>
-    </section>
   </main>
 
 <!-- Form sản phẩm -->
-<div id="productFormModal" class="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center hidden z-50">
-  <div class="bg-white p-6 rounded w-full max-w-3xl">
-    <h2 class="text-xl font-bold mb-4">Thêm / Sửa sản phẩm</h2>
-    <form id="productForm">
-      <input type="hidden" id="editId">
-      <div class="grid grid-cols-2 gap-4">
+<div id="productModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div class="bg-white rounded-lg w-full max-w-4xl p-6 overflow-auto max-h-[90vh]">
+      <h3 id="productModalTitle" class="text-xl font-bold mb-4">Thêm sản phẩm</h3>
+      <form id="productForm" class="space-y-4">
         <div>
           <label class="block font-medium">Tên sản phẩm</label>
-          <input id="name" type="text" class="w-full border p-2 rounded" required />
+          <input id="productName" class="w-full border p-2 rounded" required>
         </div>
         <div>
           <label class="block font-medium">Danh mục</label>
-          <input id="categoryId" type="text" class="w-full border p-2 rounded" />
+          <input id="productCategory" class="w-full border p-2 rounded" required>
         </div>
-        <div class="col-span-2">
-          <label class="block font-medium">Hình ảnh chính</label>
-          <input id="imageFile" type="file" accept="image/*" class="w-full border p-2 rounded" />
+        <div>
+          <label class="block font-medium">Mô tả</label>
+          <textarea id="productDescription" rows="3" class="w-full border p-2 rounded"></textarea>
         </div>
-      </div>
+        <div>
+          <label class="block font-medium">Ảnh chính</label>
+          <input type="file" id="productImageFile" accept="image/*" class="w-full border p-2 rounded">
+          <img id="previewImage" class="mt-2 w-24 h-24 object-cover rounded hidden"/>
+        </div>
 
-      <div class="mt-6">
-        <label class="block font-semibold mb-2">Biến thể sản phẩm</label>
-        <div id="variantsContainer" class="space-y-2">
-          <!-- Dòng biến thể sẽ được thêm ở đây -->
+        <div>
+          <label class="block font-medium">Nhóm biến thể</label>
+          <div id="variantGroups" class="space-y-4"></div>
+          <button type="button" onclick="addGroup()" class="bg-blue-500 text-white px-3 py-1 rounded">+ Thêm nhóm biến thể</button>
         </div>
-        <button type="button" onclick="addVariantRow()" class="mt-2 bg-blue-100 text-blue-800 px-3 py-1 rounded">+ Thêm biến thể</button>
-      </div>
 
-      <div class="mt-6 text-right">
-        <button type="button" onclick="closeForm()" class="bg-gray-500 text-white px-4 py-2 rounded mr-2">Hủy</button>
-        <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded">Lưu</button>
-      </div>
-    </form>
+        <div class="flex justify-end gap-2">
+          <button type="button" onclick="closeProductModal()" class="bg-gray-400 text-white px-4 py-2 rounded">Đóng</button>
+          <button type="submit" class="bg-green-600 text-white px-4 py-2 rounded">Lưu</button>
+        </div>
+      </form>
+    </div>
   </div>
-</div>
 
 <script>
 function addVariantRow() {
