@@ -123,6 +123,8 @@ window.showSection = function (id) {
   if (id === "products"   && typeof loadProducts    === "function") loadProducts();
   if (id === "promotions" && typeof loadPromotions  === "function") loadPromotions();
   if (id === "orders"     && typeof loadAllOrders   === "function") loadAllOrders(); // nếu bạn có
+  if (id === "inventory" && typeof loadInventory === "function") loadInventory();
+  
 };
 
 // === SIDEBAR ORDER SUBMENU ===
@@ -191,7 +193,6 @@ window.applyAdminFilter = function () {
     }
   });
 };
-
 // === QUẢN LÝ NHÂN VIÊN (staff) ===
 window.loadUsers = function () {
   const userTable = document.getElementById("userTableBody");
@@ -245,8 +246,8 @@ document.getElementById("addStaffForm")?.addEventListener("submit", function (e)
     return;
   }
 
-  // tạo ID mới
-  const newRef = ref(db, "users").push();
+  // tạo ID mới bằng push
+  const newRef = push(ref(db, "users"));
   const userId = newRef.key;
 
   const newUser = {
@@ -255,11 +256,11 @@ document.getElementById("addStaffForm")?.addEventListener("submit", function (e)
     phone: phone || "",
     role: "staff",
     avatar: "", // để trống hoặc gắn mặc định
-    password, // **lưu thô, nên băm / chuyển sang auth sau**
+    password, // **nên dùng Firebase Auth thay vì lưu thô**
     createdAt: Date.now()
   };
 
-  update(ref(db, `users/${userId}`), newUser)
+  update(newRef, newUser)
     .then(() => {
       alert("Đã thêm nhân viên.");
       const addModal = bootstrap.Modal.getInstance(document.getElementById("addStaffModal"));
@@ -319,7 +320,6 @@ function showUserEditModal(userId, user) {
               <input type="text" class="form-control" value="staff" disabled />
               <input type="hidden" id="editRole" value="staff" />
             </div>
-            <!-- không cho đổi mật khẩu tại đây, nếu cần tách modal riêng -->
           </div>
           <div class="modal-footer">
             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Hủy</button>
@@ -392,7 +392,6 @@ window.deleteUser = function (id) {
     .then(() => alert("Đã xoá (đánh dấu)."))
     .catch(e => alert("Lỗi: " + e.message));
 };
-
 // === QUẢN LÝ SẢN PHẨM ===
 // helper: tạo HTML sao theo rating (ví dụ 4.3 -> ★★★★☆ (4.3))
 function renderStars(rating) {
@@ -830,11 +829,7 @@ function createOrderRow(entry) {
       <button class="btn btn-sm btn-primary me-1" onclick="updateOrderStatus('${userId}','${orderId}','completed')">Xác nhận nhận hàng</button>
       <button class="btn btn-sm btn-danger" onclick="cancelOrder('${userId}','${orderId}')">Huỷ</button>
     `;
-  } else if (status === "completed") {
-    actionHtml = `
-      <button class="btn btn-sm btn-secondary me-1" onclick="showOrderDetail('${orderId}','${userId}')">Chi tiết</button>
-      <button class="btn btn-sm btn-warning" onclick="requestReturnOrder('${userId}','${orderId}')">Yêu cầu hoàn trả</button>
-    `;
+  
   } else if (status === "return_requested") {
     actionHtml = `
       <button class="btn btn-sm btn-outline-warning me-1" onclick="cancelReturnRequest('${userId}','${orderId}')">Huỷ yêu cầu</button>
@@ -933,96 +928,119 @@ function loadOrdersByStatus() {
   });
 }
 
-// cập nhật số liệu doanh thu từ các đơn đã hoàn thành
-function computeRevenueSummary(allOrders) {
-  const completedOrders = allOrders.filter(o => (o.order.status || "").toLowerCase() === "completed");
+// ===== CẬP NHẬT SỐ LIỆU DOANH THU / TỔNG ĐƠN / TOP SẢN PHẨM =====
+function computeRevenueSummary(allOrders, opts = { updateCharts: true }) {
+  const completedOrders = allOrders.filter(
+    o => (o.order.status || "").toLowerCase() === "completed"
+  );
+
   let totalOrders = 0;
   let totalRevenue = 0;
   const productMap = {};
 
   completedOrders.forEach(entry => {
-    const order = entry.order;
+    const order = entry.order || {};
     totalOrders++;
     totalRevenue += Number(order.totalAmount || 0);
-    if (Array.isArray(order.items)) {
-      order.items.forEach(item => {
-        const key = `${item.productName}-${item.variant || "default"}`;
-        const revenue = (item.price || 0) * (item.quantity || 0);
-        if (!productMap[key]) {
-          productMap[key] = {
-            name: item.productName,
-            variant: item.variant || "Mặc định",
-            image: item.productImage || "https://via.placeholder.com/40",
-            quantity: 0,
-            revenue: 0
-          };
-        }
-        productMap[key].quantity += item.quantity || 0;
-        productMap[key].revenue += revenue;
-      });
-    }
+
+    // Hỗ trợ cả mảng lẫn object items
+    const items = Array.isArray(order.items)
+      ? order.items
+      : (order.items ? Object.values(order.items) : []);
+
+    items.forEach(item => {
+      const name = item.productName || "Sản phẩm";
+      const variant = item.variant || "Mặc định";
+      const key = `${name}-${variant}`;
+      const qty = Number(item.quantity || 0);
+      const price = Number(item.price || 0);
+      const revenue = price * qty;
+
+      if (!productMap[key]) {
+        productMap[key] = {
+          name,
+          variant,
+          image: item.productImage || "https://via.placeholder.com/40",
+          quantity: 0,
+          revenue: 0
+        };
+      }
+      productMap[key].quantity += qty;
+      productMap[key].revenue  += revenue;
+    });
   });
 
-  document.getElementById("totalOrders").textContent = totalOrders;
-  document.getElementById("totalRevenue").textContent = totalRevenue.toLocaleString();
+  // ✅ Cập nhật “Tổng đơn” và “Tổng doanh thu”
+  const totalOrdersEl  = document.getElementById("totalOrders");
+  const totalRevenueEl = document.getElementById("totalRevenue");
+  if (totalOrdersEl)  totalOrdersEl.textContent  = totalOrders;
+  if (totalRevenueEl) totalRevenueEl.textContent = totalRevenue.toLocaleString();
 
+  // ✅ Cập nhật “Top sản phẩm” theo dữ liệu truyền vào
   const sortedProducts = Object.values(productMap)
-    .sort((a, b) => b.revenue - a.revenue)
+    .sort((a, b) => b.quantity - a.quantity)
     .slice(0, 5);
 
+  const totalQuantity = sortedProducts.reduce((s, p) => s + p.quantity, 0);
   const topProductsEl = document.getElementById("topProducts");
-  topProductsEl.innerHTML = "";
-  sortedProducts.forEach(data => {
-    const div = document.createElement("div");
-    div.className = "product-item";
-    const percent = totalRevenue ? ((data.revenue / totalRevenue) * 100).toFixed(1) : 0;
-    div.innerHTML = `
-      <img src="${data.image}" alt="Ảnh">
-      <div class="info">
-        <strong>${data.name}</strong>
-        <div class="variant">Biến thể: ${data.variant}</div>
-      </div>
-      <div class="text-end">
-        <div class="revenue fw-bold">${data.revenue.toLocaleString()} đ</div>
-        <div class="small text-muted">${percent}%</div>
-      </div>
-    `;
-    topProductsEl.appendChild(div);
-  });
+  if (topProductsEl) {
+    topProductsEl.innerHTML = "";
+    sortedProducts.forEach(data => {
+      const percent = totalQuantity ? ((data.quantity / totalQuantity) * 100).toFixed(1) : 0;
+      const div = document.createElement("div");
+      div.className = "product-item";
+      div.innerHTML = `
+        <img src="${data.image}" alt="Ảnh">
+        <div class="info">
+          <strong>${data.name}</strong>
+          <div class="variant">Biến thể: ${data.variant}</div>
+        </div>
+        <div class="text-end">
+          <div class="fw-bold">SL: ${data.quantity}</div>
+          <div class="revenue">${data.revenue.toLocaleString()} đ</div>
+          <div class="small text-muted">${percent}%</div>
+        </div>
+      `;
+      topProductsEl.appendChild(div);
+    });
+  }
 
-  // vẽ các biểu đồ
-  renderRevenueCharts(allOrders);
+  // ✅ Chỉ vẽ lại các biểu đồ tổng khi muốn (khi load toàn bộ)
+  if (opts.updateCharts) {
+    renderRevenueCharts(allOrders);
+  }
 }
 
 // xử lý biểu đồ
+// Gom dữ liệu doanh thu
 function formatDataByPeriod(orders, period) {
   const grouped = {};
   const now = new Date();
 
   if (period === "week") {
-    const weekdays = ["CN", "Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7"];
     const startOfWeek = new Date(now);
-    startOfWeek.setDate(now.getDate() - now.getDay()); // Chủ nhật
+    startOfWeek.setDate(now.getDate() - now.getDay()); // CN
 
     for (let i = 0; i < 7; i++) {
       const d = new Date(startOfWeek);
       d.setDate(startOfWeek.getDate() + i);
-      const label = `${weekdays[d.getDay()]} ${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`;
-      grouped[label] = 0;
+      const key = d.toISOString().split("T")[0]; // ✅ yyyy-MM-dd
+      grouped[key] = 0;
     }
 
     orders.forEach(entry => {
       const order = entry.order;
       if ((order.status || "").toLowerCase() !== "completed") return;
       const d = new Date(order.timestamp);
-      const weekday = ["CN","Thứ 2","Thứ 3","Thứ 4","Thứ 5","Thứ 6","Thứ 7"][d.getDay()];
-      const label = `${weekday} ${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`;
-      if (grouped[label] !== undefined) grouped[label] += Number(order.totalAmount || 0);
+      const key = d.toISOString().split("T")[0]; // ✅ cũng yyyy-MM-dd
+      if (grouped[key] !== undefined) {
+        grouped[key] += Number(order.totalAmount || 0);
+      }
     });
   } else if (period === "month") {
     const year = now.getFullYear();
     for (let i = 1; i <= 12; i++) {
-      const key = `${year}-${String(i).padStart(2,'0')}`;
+      const key = `${year}-${String(i).padStart(2,'0')}`; // yyyy-MM
       grouped[key] = 0;
     }
     orders.forEach(entry => {
@@ -1042,19 +1060,41 @@ function formatDataByPeriod(orders, period) {
       grouped[key] += Number(order.totalAmount || 0);
     });
   }
+
   return grouped;
 }
-
 function renderBarChart(canvasId, label, dataMap) {
   const ctx = document.getElementById(canvasId);
   if (ctx.chartInstance) ctx.chartInstance.destroy();
+
+  // ✅ Chuyển object -> mảng và sort theo ngày (key)
+  const sortedEntries = Object.entries(dataMap).sort((a, b) => {
+    return new Date(a[0]) - new Date(b[0]); // sắp xếp theo ngày tăng dần
+  });
+
+  // ✅ Tách labels & values
+  const labels = sortedEntries.map(([key]) => {
+    if (key.length === 10) { // yyyy-MM-dd
+      const d = new Date(key);
+      return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}`;
+    } else if (key.length === 7) { // yyyy-MM
+      const [y, m] = key.split("-");
+      return `${m}/${y}`;
+    } else { // yyyy
+      return key;
+    }
+  });
+
+  const values = sortedEntries.map(([_, val]) => val);
+
+  // ✅ Chart.js sẽ hiển thị đúng theo labels mình đưa vào
   ctx.chartInstance = new Chart(ctx, {
     type: 'bar',
     data: {
-      labels: Object.keys(dataMap),
+      labels: labels,
       datasets: [{
         label: label,
-        data: Object.values(dataMap),
+        data: values,
         backgroundColor: 'rgba(54, 162, 235, 0.6)'
       }]
     },
@@ -1068,6 +1108,8 @@ function renderBarChart(canvasId, label, dataMap) {
     }
   });
 }
+
+
 
 function renderHorizontalBarChart(canvasId, label, dataMap) {
   const ctx = document.getElementById(canvasId);
@@ -1259,9 +1301,10 @@ window.markReturned = function (userId, orderId) {
 
 window.showOrderDetail = function (orderId, userId) {
   onValue(ref(db, `orders/${userId}/${orderId}`), snap => {
-    if (!snap.exists()) return;
+    if (!snap.exists()) return alert("Không tìm thấy đơn hàng.");
     const order = snap.val();
     const timeStr = formatTimestamp(order.timestamp || order.createdAt || 0);
+
     let html = `
       <div class="modal fade show" style="display:block;" id="detailModal">
         <div class="modal-dialog modal-lg">
@@ -1271,30 +1314,45 @@ window.showOrderDetail = function (orderId, userId) {
               <button type="button" class="btn-close" onclick="document.getElementById('detailModal').remove()"></button>
             </div>
             <div class="modal-body">
+              <p><strong>Người nhận:</strong> ${escapeHtml(order.receiverName || "")}</p>
+              <p><strong>Số điện thoại:</strong> ${escapeHtml(order.receiverPhone || "")}</p>
+              <p><strong>Địa chỉ:</strong> ${escapeHtml(order.receiverAddress || "")}</p>
+              <p><strong>Phương thức thanh toán:</strong> ${escapeHtml(order.paymentMethod || "Chưa có")}</p>
+              <p><strong>Tổng tiền:</strong> ${currency(order.totalAmount)}</p>
               <p><strong>Thời gian đặt:</strong> ${timeStr}</p>
-              <p><strong>Trạng thái:</strong> ${order.status}</p>
+              <p><strong>Trạng thái:</strong> ${statusBadge(order.status)}</p>
     `;
+
+    // Nếu có yêu cầu hoàn trả
     if (order.return) {
       const reqAt = new Date(order.return.requestedAt || 0);
-      html += `<p class="text-warning"><strong>Yêu cầu hoàn trả:</strong> ${order.return.reason} <br><small>Ngày: ${reqAt.toLocaleString("vi-VN")}</small></p>`;
+      html += `
+        <p class="text-warning">
+          <strong>Yêu cầu hoàn trả:</strong> ${escapeHtml(order.return.reason)} 
+          <br><small>Ngày: ${reqAt.toLocaleString("vi-VN")}</small>
+        </p>`;
     }
-    if (Array.isArray(order.items)) {
-      order.items.forEach(item => {
+
+    // Danh sách sản phẩm
+    const items = Array.isArray(order.items) ? order.items : (order.items ? Object.values(order.items) : []);
+    if (items.length) {
+      items.forEach(item => {
         html += `
           <div class="d-flex mb-3 border p-2 rounded">
             <div class="me-3">
               <img src="${item.productImage || ''}" width="60" height="60" style="object-fit:cover;border-radius:6px;" />
             </div>
             <div>
-              <div><strong>${item.productName || ''}</strong></div>
-              <div>Biến thể: ${item.variant || ''}</div>
+              <div><strong>${escapeHtml(item.productName || '')}</strong></div>
+              <div>Biến thể: ${escapeHtml(item.variant || '')}</div>
               <div>Số lượng: ${item.quantity || 0}</div>
-              <div>Giá: ${(item.price || 0).toLocaleString()} đ</div>
+              <div>Giá: ${currency(item.price)}</div>
             </div>
           </div>
         `;
       });
     }
+
     html += `
             </div>
             <div class="modal-footer">
@@ -1304,6 +1362,7 @@ window.showOrderDetail = function (orderId, userId) {
         </div>
       </div>
     `;
+
     const existing = document.getElementById('detailModal');
     if (existing) existing.remove();
     const wrapper = document.createElement("div");
@@ -1311,6 +1370,48 @@ window.showOrderDetail = function (orderId, userId) {
     document.body.appendChild(wrapper);
   }, { onlyOnce: true });
 };
+window.formatTimestamp = function (ts) {
+  if (!ts) return "";
+  try {
+    return new Date(ts).toLocaleString("vi-VN");
+  } catch (e) {
+    return "";
+  }
+};
+
+window.currency = function (n) {
+  try {
+    return (n || 0).toLocaleString("vi-VN") + " đ";
+  } catch (e) {
+    return n + " đ";
+  }
+};
+
+window.escapeHtml = function (str) {
+  return String(str || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+};
+window.statusBadge = function (status) {
+  if (!status) return "";
+
+  // Map trạng thái sang class màu + nhãn tiếng Việt
+  const map = {
+    pending:    { cls: "secondary", label: "Chờ xử lý" },
+    ondelivery:  { cls: "info",      label: "Đang giao" },
+    return_requested:   { cls: "primary",   label: "Yêu cầu hoàn trả" },
+    completed:  { cls: "success",   label: "Hoàn tất" },
+    cancelled:  { cls: "danger",    label: "Đã hủy" }
+  };
+
+  const obj = map[status] || { cls: "secondary", label: escapeHtml(status) };
+
+  return `<span class="badge bg-${obj.cls}">${obj.label}</span>`;
+};
+
 
 // khởi tạo
 window.addEventListener("DOMContentLoaded", () => {
@@ -1320,36 +1421,40 @@ window.addEventListener("DOMContentLoaded", () => {
   showSection("dashboard");
   showOrderCategory("pending"); // mặc định
 });
-
-// lọc doanh thu theo khoảng
-document.getElementById("btnSearch").addEventListener("click", () => {
-  // gọi lại summary sau khi các đơn đã tải
-  // lấy tất cả đơn từ Firebase rồi lọc
+// ===== LỌC DOANH THU THEO KHOẢNG NGÀY A→B =====
+document.getElementById("btnSearch")?.addEventListener("click", () => {
   onValue(ref(db, "orders"), snapshot => {
     const all = [];
     snapshot.forEach(userSnap => {
+      const userId = userSnap.key;
       userSnap.forEach(orderSnap => {
-        const order = orderSnap.val();
+        const order   = orderSnap.val() || {};
         const orderId = orderSnap.key;
-        const userId = userSnap.key;
         all.push({ order, orderId, userId });
       });
     });
-    const fromDateStr = document.getElementById("fromDate").value;
-    const toDateStr = document.getElementById("toDate").value;
+
+    const fromDateStr = document.getElementById("fromDate")?.value;
+    const toDateStr   = document.getElementById("toDate")?.value;
     if (!fromDateStr || !toDateStr) {
       alert("Vui lòng chọn cả hai ngày.");
       return;
     }
-    const fromDate = new Date(fromDateStr);
-    const toDate = new Date(toDateStr);
-    toDate.setHours(23,59,59,999);
+
+    const from = new Date(fromDateStr); from.setHours(0,0,0,0);
+    const to   = new Date(toDateStr);   to.setHours(23,59,59,999);
+
+    // ✅ Lọc đơn completed trong khoảng A→B
     const filtered = all.filter(e => {
       const ts = Number(e.order.timestamp || e.order.createdAt || 0);
-      const d = new Date(ts);
-      return d >= fromDate && d <= toDate && (e.order.status || "").toLowerCase() === "completed";
+      const d  = new Date(ts);
+      return (e.order.status || "").toLowerCase() === "completed" && d >= from && d <= to;
     });
-    // vẽ biểu đồ lọc
+
+    // ✅ Cập nhật Tổng đơn / Tổng doanh thu / Top sản phẩm theo kết quả lọc
+    computeRevenueSummary(filtered, { updateCharts: false });
+
+    // ✅ Vẽ biểu đồ doanh thu theo ngày cho khoảng lọc
     const dataMap = {};
     filtered.forEach(e => {
       const date = new Date(Number(e.order.timestamp || e.order.createdAt || 0));
@@ -1357,30 +1462,30 @@ document.getElementById("btnSearch").addEventListener("click", () => {
       if (!dataMap[label]) dataMap[label] = 0;
       dataMap[label] += Number(e.order.totalAmount || 0);
     });
-    // vẽ
-    const ctx = document.getElementById("filteredRevenueChart");
-    if (ctx.chartInstance) ctx.chartInstance.destroy();
-    ctx.chartInstance = new Chart(ctx, {
-      type: 'bar',
-      data: {
-        labels: Object.keys(dataMap),
-        datasets: [{
-          label: 'Doanh thu theo ngày',
-          data: Object.values(dataMap),
-          backgroundColor: 'rgba(153, 102, 255, 0.6)'
-        }]
-      },
-      options: {
-        responsive: true,
-        plugins: {
-          title: { display: true, text: 'Doanh thu lọc theo ngày' }
-        },
-        scales: { y: { beginAtZero: true } }
-      }
-    });
-  }, { onlyOnce: true });
 
+    const ctx = document.getElementById("filteredRevenueChart");
+    if (ctx?.chartInstance) ctx.chartInstance.destroy();
+    if (ctx) {
+      ctx.chartInstance = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: Object.keys(dataMap),
+          datasets: [{
+            label: 'Doanh thu theo ngày (lọc)',
+            data: Object.values(dataMap),
+            backgroundColor: 'rgba(153, 102, 255, 0.6)'
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: { title: { display: true, text: 'Doanh thu lọc theo ngày' } },
+          scales: { y: { beginAtZero: true } }
+        }
+      });
+    }
+  }, { onlyOnce: true });
 });
+
 // === QUẢN LÝ KHUYẾN MÃI (FULL) ===
 // Yêu cầu HTML:
 // - Bảng danh sách: <tbody id="promoTableBody"></tbody>
@@ -1693,74 +1798,312 @@ window.addEventListener("DOMContentLoaded", () => loadPromotions());
 // Quản lý Banner
 // ==========================
 
-// Thêm banner mới
+let editBannerId = null;
+let oldImageUrl = null;
+
+// 🔹 Thêm banner
 window.addBanner = async function () {
   const file = document.getElementById("bannerImageFile").files[0];
-  if (!file) {
-    return alert("📌 Vui lòng chọn ảnh banner!");
-  }
+  if (!file) return alert("Vui lòng chọn ảnh!");
 
-  const storageRef = sRef(storage, `banners/${Date.now()}_${file.name}`);
-  await uploadBytes(storageRef, file);
-  const url = await getDownloadURL(storageRef);
+  const imgRef = storageRef(storage, "banners/" + Date.now() + "_" + file.name);
+  await uploadBytes(imgRef, file);
+  const url = await getDownloadURL(imgRef);
 
   await set(push(ref(db, "banners")), { imageUrl: url });
-  resetBannerForm();
+  resetForm();
 };
 
-// Hiển thị danh sách banner
+// 🔹 Hiển thị danh sách banner
 function loadBanners() {
   onValue(ref(db, "banners"), (snapshot) => {
     const list = document.getElementById("bannerList");
     list.innerHTML = "";
-
-    if (!snapshot.exists()) {
-      list.innerHTML = `
-        <tr>
-          <td colspan="2" class="text-center text-gray-500 p-4">Chưa có banner nào</td>
-        </tr>
-      `;
-      return;
-    }
-
     snapshot.forEach((child) => {
-      const { imageUrl } = child.val();
-      list.innerHTML += `
-        <tr class="hover:bg-gray-50">
-          <td class="border p-2 text-center">
-            <img src="${imageUrl}" alt="Banner" class="w-32 h-auto rounded shadow">
-          </td>
-          <td class="border p-2 text-center">
-            <button onclick="deleteBanner('${child.key}', '${imageUrl}')"
-              class="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded shadow">
-              🗑 Xóa
-            </button>
+      const data = child.val();
+      const row = `
+        <tr>
+          <td class="border p-2"><img src="${data.imageUrl}" class="w-32"></td>
+          <td class="border p-2">
+            <button onclick="editBanner('${child.key}', '${data.imageUrl}')" class="bg-blue-500 text-white px-2 py-1 rounded">Sửa</button>
+            <button onclick="deleteBanner('${child.key}', '${data.imageUrl}')" class="bg-red-500 text-white px-2 py-1 rounded">Xóa</button>
           </td>
         </tr>
       `;
+      list.innerHTML += row;
     });
   });
 }
 
-// Xóa banner
-window.deleteBanner = async function (id, imageUrl) {
-  if (!confirm("❗ Bạn có chắc muốn xóa banner này?")) return;
-
-  try {
-    const imgRef = sRef(storage, imageUrl);
-    await deleteObject(imgRef);
-  } catch (err) {
-    console.warn("⚠ Không thể xóa ảnh:", err);
-  }
-
-  await remove(ref(db, `banners/${id}`));
+// 🔹 Sửa banner
+window.editBanner = function (id, imageUrl) {
+  editBannerId = id;
+  oldImageUrl = imageUrl;
+  document.getElementById("btnAddBanner").classList.add("hidden");
+  document.getElementById("btnUpdateBanner").classList.remove("hidden");
+  alert("Chọn ảnh mới nếu muốn thay đổi hình!");
 };
 
-// Reset form
-function resetBannerForm() {
+// 🔹 Cập nhật banner
+window.updateBanner = async function () {
+  if (!editBannerId) return;
+
+  const file = document.getElementById("bannerImageFile").files[0];
+  if (!file) return alert("Vui lòng chọn ảnh mới!");
+
+  // Upload ảnh mới
+  const imgRef = storageRef(storage, "banners/" + Date.now() + "_" + file.name);
+  await uploadBytes(imgRef, file);
+  const url = await getDownloadURL(imgRef);
+
+  await update(ref(db, "banners/" + editBannerId), { imageUrl: url });
+  resetForm();
+};
+
+// 🔹 Xóa banner
+window.deleteBanner = async function (id, imageUrl) {
+  if (!confirm("Bạn có chắc muốn xóa banner này?")) return;
+
+  try {
+    const imgRef = storageRef(storage, imageUrl);
+    await deleteObject(imgRef);
+  } catch (err) {
+    console.warn("Không thể xóa ảnh:", err);
+  }
+
+  await remove(ref(db, "banners/" + id));
+};
+
+// 🔹 Reset form
+function resetForm() {
   document.getElementById("bannerImageFile").value = "";
+  document.getElementById("btnAddBanner").classList.remove("hidden");
+  document.getElementById("btnUpdateBanner").classList.add("hidden");
+  editBannerId = null;
+  oldImageUrl = null;
 }
 
-// Tải danh sách khi load trang
+// 🔹 Tải danh sách khi load trang
 loadBanners();
+/* =========================================================
+   QUẢN LÝ KHO HÀNG (FULL, HỖ TRỢ BIẾN THỂ + TRỪ TỒN KHI COMPLETED)
+   ========================================================= */
 
+/* ---------- Helpers ---------- */
+function inv_escape(s) {
+  return String(s ?? "")
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'","&#39;");
+}
+function inv_badgeAvail(x) {
+  if (x <= 0) return `<span class="badge bg-danger">Hết hàng</span>`;
+  if (x <= 3)  return `<span class="badge bg-warning">Còn ${x}</span>`;
+  return `<span class="badge bg-success">Còn ${x}</span>`;
+}
+function inv_itemsArray(items) {
+  return Array.isArray(items) ? items : (items ? Object.values(items) : []);
+}
+
+/* Flatten product variants */
+function inv_flattenVariants(productId, p) {
+  const out = [];
+  const name = p.name || "(Không tên)";
+  const variants = p.variants || {};
+
+  const pickDisplayImage = () => {
+    if (p.imageUrl) return p.imageUrl;
+    for (const g of Object.values(variants)) {
+      for (const c of Object.values(g || {})) {
+        if (c?.image) return c.image;
+      }
+    }
+    return "";
+  };
+
+  const baseImage = pickDisplayImage();
+
+  if (!Object.keys(variants).length) {
+    out.push({
+      productId,
+      name,
+      groupKey: "_",
+      colorKey: "_",
+      variantLabel: "Mặc định",
+      image: baseImage,
+      price: Number(p.price || 0),
+      quantity: Number(p.quantity || 0),
+    });
+    return out;
+  }
+
+  for (const gKey of Object.keys(variants)) {
+    const group = variants[gKey] || {};
+    for (const cKey of Object.keys(group)) {
+      const v = group[cKey] || {};
+      out.push({
+        productId,
+        name,
+        groupKey: gKey,
+        colorKey: cKey,
+        variantLabel: `${gKey}: ${cKey}`,
+        image: v.image || baseImage,
+        price: Number(v.price || 0),
+        quantity: Number(v.quantity || 0),
+      });
+    }
+  }
+  return out;
+}
+
+/* Update quantity */
+async function inv_updateVariantQuantity(productId, groupKey, colorKey, newQty) {
+  const rootRef = ref(db, `product/${productId}`);
+  const upd = {};
+  if (groupKey === "_" && colorKey === "_") {
+    upd["quantity"] = newQty;
+  } else {
+    upd[`variants/${groupKey}/${colorKey}/quantity`] = newQty;
+  }
+  await update(rootRef, upd);
+}
+
+/* ---------- Nhập thêm tồn ---------- */
+window.importStockVariant = function (productId, groupKey, colorKey, currentQty) {
+  const s = prompt("Nhập số lượng cần nhập thêm:", "0");
+  if (s == null) return;
+  const add = parseInt(s, 10);
+  if (isNaN(add) || add <= 0) {
+    alert("❌ Số lượng không hợp lệ.");
+    return;
+  }
+  const next = Number(currentQty || 0) + add;
+  inv_updateVariantQuantity(productId, groupKey, colorKey, next)
+    .then(() => {
+      alert(`✅ Đã nhập thêm ${add}. Tồn mới: ${next}`);
+      if (typeof loadInventory === "function") loadInventory();
+    })
+    .catch((e) => alert("❌ Lỗi khi nhập tồn: " + e.message));
+};
+
+/* ---------- Load Inventory ---------- */
+window.loadInventory = function () {
+  const tbody = document.getElementById("inventoryTableBody");
+  if (!tbody) return;
+
+  onValue(ref(db, "product"), (prodSnap) => {
+    const variantRows = [];
+    prodSnap.forEach((ch) => {
+      const pid = ch.key;
+      const p = ch.val() || {};
+      const vlist = inv_flattenVariants(pid, p);
+      vlist.forEach((v) => variantRows.push(v));
+    });
+
+    tbody.innerHTML = "";
+    variantRows.forEach((v) => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td><img src="${inv_escape(v.image || "#")}" width="50" height="50" style="object-fit:cover;border-radius:6px"/></td>
+        <td>${inv_escape(v.name)} <span class="text-muted">(${inv_escape(v.variantLabel)})</span></td>
+        <td>${v.quantity}</td>
+        <td>${inv_badgeAvail(v.quantity)}</td>
+        <td>
+          <button class="btn btn-sm btn-primary"
+            onclick="importStockVariant('${v.productId}', '${v.groupKey}', '${v.colorKey}', ${v.quantity})">
+            Nhập tồn
+          </button>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+  });
+};
+
+/* ---------- Lọc nhanh ---------- */
+window.filterInventory = function () {
+  const kw = (document.getElementById("inventorySearchInput")?.value || "")
+    .trim()
+    .toLowerCase();
+  document.querySelectorAll("#inventoryTableBody tr").forEach((tr) => {
+    const txt = tr.textContent.toLowerCase();
+    tr.style.display = txt.includes(kw) ? "" : "none";
+  });
+};
+
+window.updateOrderStatus = async function (userId, orderId, status) {
+  const orderRef = ref(db, `orders/${userId}/${orderId}`);
+  const snap = await new Promise((resolve) =>
+    onValue(orderRef, resolve, { onlyOnce: true })
+  );
+  if (!snap.exists()) return alert("Không tìm thấy đơn hàng.");
+  const order = snap.val();
+
+  await update(orderRef, { status });
+
+  if (status === "completed") {
+    const items = inv_itemsArray(order.items);
+
+    for (const it of items) {
+      const pid = it.productId;
+      const qty = Number(it.quantity || 0);
+      if (!pid || !qty) continue;
+
+      const vColor = (it.variantColor || "").trim();
+      const vSize  = (it.variantSize  || "").trim();
+      const vLabel = (it.variant || "").trim();
+
+      const prodSnap = await new Promise((resolve) =>
+        onValue(ref(db, `product/${pid}`), resolve, { onlyOnce: true })
+      );
+      if (!prodSnap.exists()) continue;
+      const p = prodSnap.val();
+
+      let deducted = false;
+
+      // Duyệt toàn bộ variants
+      if (p.variants) {
+        for (const gKey of Object.keys(p.variants)) {
+          for (const cKey of Object.keys(p.variants[gKey] || {})) {
+            const node = p.variants[gKey][cKey];
+            let match = false;
+
+            // Nếu là nhóm màu
+            if (gKey.toLowerCase().includes("màu") && vColor && cKey === vColor) {
+              match = true;
+            }
+            // Nếu là nhóm size
+            else if (gKey.toLowerCase().includes("kích") && vSize && cKey === vSize) {
+              match = true;
+            }
+            // Nếu order lưu variantLabel dạng text
+            else if (vLabel && vLabel.includes(gKey) && vLabel.includes(cKey)) {
+              match = true;
+            }
+
+            if (match) {
+              const newQty = Math.max(0, Number(node.quantity || 0) - qty);
+              await update(ref(db, `product/${pid}/variants/${gKey}/${cKey}`), {
+                quantity: newQty,
+              });
+              console.log(`✅ Trừ ${gKey} - ${cKey}: ${node.quantity} - ${qty} = ${newQty}`);
+              deducted = true;
+            }
+          }
+        }
+      }
+
+      // Nếu không match variant nào -> trừ số lượng gốc
+      if (!deducted && p.quantity != null) {
+        const newQty = Math.max(0, Number(p.quantity || 0) - qty);
+        await update(ref(db, `product/${pid}`), { quantity: newQty });
+        console.log(`✅ Trừ gốc: ${p.quantity} - ${qty} = ${newQty}`);
+      }
+    }
+  }
+
+  alert(`✅ Đã chuyển sang '${status}' và cập nhật tồn kho.`);
+  if (typeof loadInventory === "function") loadInventory();
+};

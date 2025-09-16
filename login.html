@@ -17,11 +17,16 @@
       <button type="submit" class="w-full bg-blue-600 text-white py-2 rounded">Đăng nhập</button>
       <p id="error" class="text-red-500 text-sm"></p>
     </form>
+    <!-- Link quên mật khẩu -->
+    <p class="text-sm text-center mt-4">
+      <a href="#" id="forgotPassword" class="text-blue-600 hover:underline">Quên mật khẩu?</a>
+    </p>
+    <p id="resetMessage" class="text-green-600 text-sm mt-2 text-center"></p>
   </div>
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-app.js";
-    import { getAuth, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-auth.js";
+    import { getAuth, signInWithEmailAndPassword, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-auth.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyBsf_IgEEci-NbSXDGLB7mQZvP_SRGMD6o",
@@ -36,6 +41,7 @@
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
 
+    // Xử lý đăng nhập
     document.getElementById("loginForm").addEventListener("submit", async (e) => {
       e.preventDefault();
       const email = document.getElementById("email").value.trim();
@@ -46,13 +52,33 @@
         const userCredential = await signInWithEmailAndPassword(auth, email, password);
         const user = userCredential.user;
 
-        // Lưu UID vào localStorage để dashboard xử lý status
         localStorage.setItem("staffId", user.uid);
         localStorage.setItem("staffEmail", user.email);
 
         window.location.href = "dashboard.html";
       } catch (error) {
         errorDiv.textContent = "Sai email hoặc mật khẩu!";
+      }
+    });
+
+    // Xử lý quên mật khẩu
+    document.getElementById("forgotPassword").addEventListener("click", async (e) => {
+      e.preventDefault();
+      const email = document.getElementById("email").value.trim();
+      const messageDiv = document.getElementById("resetMessage");
+      const errorDiv = document.getElementById("error");
+
+      if (!email) {
+        errorDiv.textContent = "Vui lòng nhập email để đặt lại mật khẩu!";
+        return;
+      }
+
+      try {
+        await sendPasswordResetEmail(auth, email);
+        messageDiv.textContent = "Đã gửi email đặt lại mật khẩu. Vui lòng kiểm tra hộp thư.";
+        errorDiv.textContent = "";
+      } catch (error) {
+        errorDiv.textContent = "Không thể gửi email đặt lại mật khẩu!";
       }
     });
   </script>

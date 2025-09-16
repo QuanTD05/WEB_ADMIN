@@ -20,7 +20,13 @@ import {
   update,
   push
 } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-database.js";
-import { getStorage } from "https://www.gstatic.com/firebasejs/9.22.1/firebase-storage.js";
+import {
+  getStorage,
+  ref as storageRef,
+  uploadBytes,
+  getDownloadURL
+} from "https://www.gstatic.com/firebasejs/9.22.1/firebase-storage.js";
+
 
 const firebaseConfig = {
   apiKey: "AIzaSyBsf_IgEEci-NbSXDGLB7mQZvP_SRGMD6o",
@@ -191,20 +197,26 @@ window.applyAdminFilter = function () {
 };
 
 /* ================== USERS MANAGEMENT ================== */
+let editingUserId = null;
+
 window.loadUsers = function () {
-  const userTable = $id("userTableBody");
+  const userTable = document.getElementById("userTableBody");
   if (!userTable) return;
+
   onValue(ref(db, "users"), (snapshot) => {
     userTable.innerHTML = "";
     snapshot.forEach((child) => {
       const user = child.val() || {};
-      if (user.role === "user") {
+      if (user.role === "user") { // 👉 chỉ load user role = "user"
         const tr = document.createElement("tr");
         tr.innerHTML = `
+          <td class="p-2 border">
+            <img src="${user.avatar || "https://via.placeholder.com/40"}" class="w-10 h-10 rounded-full object-cover">
+          </td>
           <td class="p-2 border">${user.fullName || ""}</td>
           <td class="p-2 border">${user.email || ""}</td>
           <td class="p-2 border">${user.phone || ""}</td>
-          <td class="p-2 border">${user.role || "user"}</td>
+          <td class="p-2 border">user</td>
           <td class="p-2 border space-x-2">
             <button onclick="editUser('${child.key}')" class="bg-yellow-400 text-white px-2 py-1 rounded">Sửa</button>
             <button onclick="deleteUser('${child.key}')" class="bg-red-500 text-white px-2 py-1 rounded">Xoá</button>
@@ -215,43 +227,98 @@ window.loadUsers = function () {
   });
 };
 
+window.openUserForm = function () {
+  editingUserId = null;
+  const body = `
+    <div class="vfield">
+      <div class="vlabel">Họ tên</div>
+      <input id="eu_name" class="vinput">
+    </div>
+    <div class="vfield">
+      <div class="vlabel">Email</div>
+      <input id="eu_email" class="vinput">
+    </div>
+    <div class="vfield">
+      <div class="vlabel">Số điện thoại</div>
+      <input id="eu_phone" class="vinput">
+    </div>
+    <div class="vfield">
+      <div class="vlabel">Ảnh đại diện</div>
+      <input type="file" id="eu_avatar" accept="image/*" class="vinput">
+    </div>
+  `;
+  const footer = `
+    <button class="vbtn vbtn-gray" onclick="document.getElementById('__edit_user')?.remove()">Đóng</button>
+    <button class="vbtn vbtn-primary" onclick="saveUser()">Lưu</button>
+  `;
+  Modal.show({ id: "__edit_user", title: "Thêm người dùng", body, footer });
+};
+
 window.editUser = function (id) {
   const userRefObj = ref(db, `users/${id}`);
   onValue(userRefObj, (snapshot) => {
     if (!snapshot.exists()) return alert("Không tìm thấy user!");
     const user = snapshot.val() || {};
+    if (user.role !== "user") return alert("Chỉ được sửa user role = 'user'");
 
-    // Modal form
+    editingUserId = id;
+
     const body = `
       <div class="vfield">
         <div class="vlabel">Họ tên</div>
         <input id="eu_name" class="vinput" value="${user.fullName || ""}">
       </div>
       <div class="vfield">
+        <div class="vlabel">Email</div>
+        <input id="eu_email" class="vinput" value="${user.email || ""}">
+      </div>
+      <div class="vfield">
         <div class="vlabel">Số điện thoại</div>
         <input id="eu_phone" class="vinput" value="${user.phone || ""}">
       </div>
       <div class="vfield">
-        <div class="vlabel">Vai trò</div>
-        <input id="eu_role" class="vinput" value="${user.role || "user"}" placeholder="user/staff/admin">
+        <div class="vlabel">Ảnh đại diện</div>
+        <input type="file" id="eu_avatar" accept="image/*" class="vinput">
+        ${user.avatar ? `<img src="${user.avatar}" class="w-12 h-12 rounded-full mt-2">` : ""}
       </div>
     `;
     const footer = `
       <button class="vbtn vbtn-gray" onclick="document.getElementById('__edit_user')?.remove()">Đóng</button>
-      <button class="vbtn vbtn-primary" onclick="(function(){
-        const name = document.getElementById('eu_name').value.trim();
-        const phone = document.getElementById('eu_phone').value.trim();
-        const role = document.getElementById('eu_role').value.trim() || 'user';
-        if(!name || !phone){ alert('Vui lòng nhập đủ Họ tên & SĐT'); return; }
-        import('https://www.gstatic.com/firebasejs/9.22.1/firebase-database.js').then(m=>{
-          m.update(m.ref(getDatabase(), 'users/${id}'), { fullName:name, phone:phone, role:role })
-            .then(()=>{ alert('✅ Cập nhật thành công'); document.getElementById('__edit_user')?.remove(); })
-            .catch(err=>alert('❌ Lỗi: '+err.message));
-        });
-      })()">Lưu</button>
+      <button class="vbtn vbtn-primary" onclick="saveUser('${id}')">Lưu</button>
     `;
     Modal.show({ id: "__edit_user", title: "Sửa người dùng", body, footer });
   }, { onlyOnce: true });
+};
+
+window.saveUser = async function (id = null) {
+  const name = document.getElementById("eu_name").value.trim();
+  const email = document.getElementById("eu_email").value.trim();
+  const phone = document.getElementById("eu_phone").value.trim();
+  const file = document.getElementById("eu_avatar")?.files[0];
+
+  if (!name || !email || !phone) {
+    alert("Vui lòng nhập đủ Họ tên, Email & SĐT");
+    return;
+  }
+
+  let avatarUrl = null;
+  if (file) {
+    const path = `users/${Date.now()}_${file.name}`;
+    const storageReference = storageRef(storage, path);
+    await uploadBytes(storageReference, file);
+    avatarUrl = await getDownloadURL(storageReference);
+  }
+
+  const data = { fullName: name, email, phone, role: "user" }; // 👉 luôn là role "user"
+  if (avatarUrl) data.avatar = avatarUrl;
+
+  const userRef = id ? ref(db, `users/${id}`) : push(ref(db, "users"));
+  update(userRef, data)
+    .then(() => {
+      alert(id ? "✅ Cập nhật thành công" : "✅ Thêm mới thành công");
+      document.getElementById("__edit_user")?.remove();
+    })
+    .catch(err => alert("❌ Lỗi: " + err.message));
 };
 
 window.deleteUser = function (id) {
@@ -321,10 +388,6 @@ function createOrderRow(entry) {
     actionCell = `
       <button onclick="updateOrderStatus('${userId}','${orderId}','completed')" class='bg-blue-500 text-white px-2 py-1 rounded mr-1'>Xác nhận nhận hàng</button>
       <button onclick="cancelOrder('${userId}','${orderId}')" class='bg-red-500 text-white px-2 py-1 rounded'>Huỷ</button>
-    `;
-  } else if (status === "completed") {
-    actionCell = `
-      <button onclick="requestReturnOrder('${userId}','${orderId}')" class='bg-yellow-500 text-white px-2 py-1 rounded'>Yêu cầu hoàn trả</button>
     `;
   } else if (status === "return_requested") {
     actionCell = `
@@ -528,180 +591,337 @@ window.addEventListener("DOMContentLoaded", () => {
 
 // === 🛒 QUẢN LÝ SẢN PHẨM ===
 
-// === 🛒 QUẢN LÝ SẢN PHẨM ===
-window.openAddForm = () => {
-  document.getElementById("productForm").reset();
-  document.getElementById("editId").value = "";
-  document.getElementById("variantsContainer").innerHTML = "";
-  addVariantRow();
-  document.getElementById("productFormModal").classList.remove("hidden");
-};
+// ===== Helper =====
+function renderStars(rating) {
+  if (!rating || isNaN(rating) || rating <= 0)
+    return `<span class="text-gray-400">Chưa có</span>`;
+  const full = Math.floor(rating);
+  const half = rating - full >= 0.5;
+  let stars = "★".repeat(full);
+  if (half) stars += "½";
+  stars += "☆".repeat(5 - full - (half ? 1 : 0));
+  return `<span class="text-yellow-500 font-bold">${stars}</span> <small>(${rating.toFixed(1)})</small>`;
+}
 
-window.closeForm = () => {
-  document.getElementById("productFormModal").classList.add("hidden");
-};
+function getDisplayImage(p) {
+  if (p.imageUrl) return p.imageUrl;
+  if (p.variants) {
+    for (const g in p.variants) {
+      for (const c in p.variants[g]) {
+        if (p.variants[g][c].image) return p.variants[g][c].image;
+      }
+    }
+  }
+  return "";
+}
 
-window.addVariantRow = () => {
-  const container = document.getElementById("variantsContainer");
-  const row = document.createElement("div");
-  row.className = "grid grid-cols-6 gap-2 items-center";
-  row.innerHTML = `
-    <input name="size" placeholder="Kích thước" class="p-2 border rounded" required />
-    <input name="color" placeholder="Màu" class="p-2 border rounded" required />
-    <input name="qty" type="number" placeholder="SL" class="p-2 border rounded" required />
-    <input name="vprice" type="number" placeholder="Giá" class="p-2 border rounded" required />
-    <input name="vimage" type="file" accept="image/*" class="p-2 border rounded" />
-    <button type="button" onclick="this.parentElement.remove()" class="text-red-600">✖</button>
-  `;
-  container.appendChild(row);
-};
+async function uploadImageToStorage(file, path) {
+  const storageReference = storageRef(storage, path);
+  await uploadBytes(storageReference, file);
+  return await getDownloadURL(storageReference);
+}
 
+// ===== Quản lý sản phẩm =====
 window.manageProducts = function () {
   const tbody = document.getElementById("productTableBody");
-  tbody.innerHTML = `<tr><td colspan='7' class='text-center p-4'>Đang tải...</td></tr>`;
+  if (!tbody) return;
 
-  onValue(ref(db, "product"), (snapshot) => {
-    tbody.innerHTML = "";
-    if (!snapshot.exists()) {
-      tbody.innerHTML = `<tr><td colspan='7' class='text-center p-4'>Không có sản phẩm.</td></tr>`;
-      return;
-    }
+  onValue(ref(db, "reviews"), (reviewSnap) => {
+    const ratingMap = {};
+    reviewSnap.forEach((prodSnap) => {
+      let sum = 0,
+        count = 0;
+      prodSnap.forEach((rSnap) => {
+        const r = rSnap.val();
+        if (r.rating) {
+          sum += parseFloat(r.rating);
+          count++;
+        }
+      });
+      ratingMap[prodSnap.key] = { avg: count ? sum / count : 0, count };
+    });
 
-    snapshot.forEach((child) => {
-      const p = child.val();
-      const productId = child.key;
-      const tr = document.createElement("tr");
-
-      const variantCount = Object.values(p.variants || {}).reduce((sum, colors) => {
-        return sum + Object.keys(colors).length;
-      }, 0);
-
-      const reviewRef = ref(db, `reviews/${productId}`);
-      onValue(reviewRef, (reviewSnap) => {
-        let totalRating = 0;
-        let reviewCount = 0;
-
-        reviewSnap.forEach(r => {
-          const rev = r.val();
-          if (rev.rating) {
-            totalRating += parseFloat(rev.rating);
-            reviewCount += 1;
-          }
-        });
-
-        const avg = reviewCount > 0 ? (totalRating / reviewCount).toFixed(1) : '-';
-        const reviewDisplay = reviewCount > 0 ? `${avg} ⭐ (${reviewCount})` : 'Chưa có';
-
+    onValue(ref(db, "product"), (snapshot) => {
+      tbody.innerHTML = "";
+      if (!snapshot.exists()) {
+        tbody.innerHTML = `<tr><td colspan="6" class="text-center">Không có sản phẩm</td></tr>`;
+        return;
+      }
+      snapshot.forEach((child) => {
+        const p = child.val(),
+          id = child.key;
+        const img = getDisplayImage(p) || "#";
+        const starHtml = ratingMap[id]?.count
+          ? renderStars(ratingMap[id].avg)
+          : `<span class="text-gray-400">Chưa có</span>`;
+        const tr = document.createElement("tr");
         tr.innerHTML = `
-          <td class="p-2 border"><img src="${p.imageUrl || "#"}" width="60" /></td>
-          <td class="p-2 border">${p.name}</td>
-          <td class="p-2 border">${p.categoryId}</td>
-          <td class="p-2 border">${variantCount} biến thể</td>
-          <td class="p-2 border">${reviewDisplay}</td>
-         
+          <td class="p-2 border"><img src="${img}" class="w-12 h-12 rounded object-cover"/></td>
+          <td class="p-2 border">${p.name || ""}</td>
+          <td class="p-2 border">${p.categoryId || ""}</td>
+          <td class="p-2 border">${
+            p.variants ? Object.keys(p.variants).length + " nhóm" : "0"
+          }</td>
+          <td class="p-2 border">${starHtml}</td>
           <td class="p-2 border">
-            <button onclick="editProduct('${productId}')" class="bg-yellow-400 px-2 py-1 rounded text-white">Sửa</button>
-            <button onclick="deleteProduct('${productId}')" class="bg-red-500 px-2 py-1 rounded text-white ml-2">Xoá</button>
-          </td>
-        `;
-      }, { onlyOnce: true });
-
-      tbody.appendChild(tr);
+            <button onclick="editProduct('${id}')" class="bg-yellow-400 text-white px-2 py-1 rounded">Sửa</button>
+            <button onclick="deleteProduct('${id}')" class="bg-red-500 text-white px-2 py-1 rounded">Xoá</button>
+          </td>`;
+        tbody.appendChild(tr);
+      });
     });
   });
 };
 
+window.deleteProduct = function (id) {
+  if (!confirm("Xác nhận xoá sản phẩm?")) return;
+  remove(ref(db, `product/${id}`))
+    .then(() => alert("Đã xoá sản phẩm"))
+    .catch((e) => alert("Lỗi: " + e.message));
+};
+
+// ===== Modal form =====
+let editingProductId = null;
+let mainImageUrl = "";
+
+window.openAddForm = function () {
+  editingProductId = null;
+  mainImageUrl = "";
+  document.getElementById("productModalTitle").textContent = "Thêm sản phẩm";
+  document.getElementById("productForm").reset();
+  document.getElementById("previewImage").classList.add("hidden");
+  document.getElementById("variantGroups").innerHTML = "";
+  document.getElementById("productModal").classList.remove("hidden");
+};
+
 window.editProduct = function (id) {
   const productRef = ref(db, `product/${id}`);
-  onValue(productRef, (snap) => {
-    if (!snap.exists()) return;
-    const p = snap.val();
-    document.getElementById("editId").value = id;
-    document.getElementById("name").value = p.name;
-    document.getElementById("categoryId").value = p.categoryId;
-    document.getElementById("variantsContainer").innerHTML = "";
-    if (p.variants) {
-      Object.entries(p.variants).forEach(([size, colors]) => {
-        Object.entries(colors).forEach(([color, info]) => {
-          const row = document.createElement("div");
-          row.className = "grid grid-cols-6 gap-2 items-center";
-          row.innerHTML = `
-            <input name="size" value="${size}" class="p-2 border rounded" required />
-            <input name="color" value="${color}" class="p-2 border rounded" required />
-            <input name="qty" type="number" value="${info.quantity}" class="p-2 border rounded" required />
-            <input name="vprice" type="number" value="${info.price}" class="p-2 border rounded" required />
-            <input name="vimage" type="file" accept="image/*" class="p-2 border rounded" />
-            <button type="button" onclick="this.parentElement.remove()" class="text-red-600">✖</button>`;
-          document.getElementById("variantsContainer").appendChild(row);
+  onValue(
+    productRef,
+    (snap) => {
+      if (!snap.exists()) return alert("Không tìm thấy sản phẩm.");
+      const p = snap.val();
+      editingProductId = id;
+      mainImageUrl = p.imageUrl || "";
+      document.getElementById("productModalTitle").textContent = "Sửa sản phẩm";
+      document.getElementById("productName").value = p.name || "";
+      document.getElementById("productCategory").value = p.categoryId || "";
+      document.getElementById("productDescription").value = p.description || "";
+      if (mainImageUrl) {
+        document.getElementById("previewImage").src = mainImageUrl;
+        document.getElementById("previewImage").classList.remove("hidden");
+      }
+      const vGroups = document.getElementById("variantGroups");
+      vGroups.innerHTML = "";
+      if (p.variants) {
+        Object.keys(p.variants).forEach((groupKey) => {
+          const group = p.variants[groupKey];
+          addGroup(groupKey, group);
+        });
+      }
+      document.getElementById("productModal").classList.remove("hidden");
+    },
+    { onlyOnce: true }
+  );
+};
+
+window.closeProductModal = function () {
+  document.getElementById("productModal").classList.add("hidden");
+};
+
+// ===== Group + Color row =====
+window.addGroup = function (groupKey = null, groupData = {}) {
+  const gId = groupKey || `group${Date.now()}`;
+  const div = document.createElement("div");
+  div.className = "border p-3 rounded";
+  div.dataset.groupId = gId;
+  div.innerHTML = `
+    <div class="flex justify-between items-center mb-2">
+      <input type="text" value="${
+        groupKey || ""
+      }" placeholder="Tên nhóm (vd: Kích thước)" class="group-name border p-1 rounded flex-1 mr-2">
+      <button type="button" onclick="this.closest('div[data-group-id]').remove()" class="bg-red-500 text-white px-2 py-1 rounded">Xóa nhóm</button>
+    </div>
+    <div class="space-y-2" id="colors_${gId}"></div>
+    <button type="button" onclick="addColorRow('${gId}')" class="bg-blue-500 text-white px-2 py-1 rounded">+ Thêm màu</button>
+  `;
+  document.getElementById("variantGroups").appendChild(div);
+
+  if (groupData) {
+    Object.keys(groupData).forEach((color) => {
+      addColorRow(gId, color, groupData[color]);
+    });
+  }
+};
+
+window.addColorRow = function (groupId, colorName = "", colorData = {}) {
+  const container = document.getElementById(`colors_${groupId}`);
+  const row = document.createElement("div");
+  row.className = "flex gap-2 items-center border p-2 rounded";
+  row.innerHTML = `
+    <input type="text" placeholder="Màu" value="${colorName}" class="color-name border p-1 rounded w-24">
+    <input type="number" placeholder="Giá" value="${
+      colorData.price || 0
+    }" class="color-price border p-1 rounded w-24">
+    <input type="number" placeholder="SL" value="${
+      colorData.quantity || 0
+    }" class="color-qty border p-1 rounded w-20">
+    <input type="file" accept="image/*" class="color-file border p-1 rounded">
+    ${
+      colorData.image
+        ? `<img src="${colorData.image}" class="w-12 h-12 object-cover rounded">`
+        : ""
+    }
+    <button type="button" onclick="this.parentElement.remove()" class="bg-red-500 text-white px-2 py-1 rounded">X</button>
+    <button type="button" onclick="setMainImage('${
+      colorData.image || ""
+    }')" class="bg-gray-500 text-white px-2 py-1 rounded">Đặt ảnh chính</button>
+  `;
+  container.appendChild(row);
+};
+
+window.setMainImage = function (url) {
+  if (!url) return alert("Chưa có ảnh để đặt.");
+  mainImageUrl = url;
+  document.getElementById("previewImage").src = url;
+  document.getElementById("previewImage").classList.remove("hidden");
+};
+
+// ===== Save product =====
+document
+  .getElementById("productForm")
+  .addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const name = document.getElementById("productName").value.trim();
+    const categoryId = document.getElementById("productCategory").value.trim();
+    const description = document
+      .getElementById("productDescription")
+      .value.trim();
+    const file = document.getElementById("productImageFile").files[0];
+
+    // ===== Validate cơ bản =====
+    if (!name) {
+      alert("Vui lòng nhập tên sản phẩm");
+      return;
+    }
+    if (!categoryId) {
+      alert("Vui lòng nhập danh mục sản phẩm");
+      return;
+    }
+    if (!description) {
+      alert("Vui lòng nhập mô tả sản phẩm");
+      return;
+    }
+
+    // ===== Upload ảnh chính (nếu có) =====
+    if (file) {
+      const path = `products/${Date.now()}_${file.name}`;
+      mainImageUrl = await uploadImageToStorage(file, path);
+    }
+
+    // ===== Xử lý variants =====
+    const variants = {};
+    let hasError = false;
+    const uploadTasks = []; // để chờ upload ảnh biến thể
+
+    document
+      .querySelectorAll("#variantGroups > div[data-group-id]")
+      .forEach((groupDiv) => {
+        const gName = groupDiv.querySelector(".group-name").value.trim();
+        if (!gName) {
+          alert("Tên nhóm biến thể không được để trống");
+          hasError = true;
+          return;
+        }
+
+        variants[gName] = {};
+        const colorRows = groupDiv.querySelectorAll(".color-name");
+
+        if (colorRows.length === 0) {
+          alert(`Nhóm "${gName}" phải có ít nhất 1 biến thể`);
+          hasError = true;
+          return;
+        }
+
+        colorRows.forEach((inp, idx) => {
+          const color = inp.value.trim();
+          const price = parseFloat(
+            groupDiv.querySelectorAll(".color-price")[idx].value
+          );
+          const qty = parseInt(
+            groupDiv.querySelectorAll(".color-qty")[idx].value
+          );
+          const fileInput = groupDiv.querySelectorAll(".color-file")[idx];
+          let imgUrl = groupDiv.querySelectorAll("img")[idx]?.src || "";
+
+          if (!color) {
+            alert(
+              `Biến thể trong nhóm "${gName}" phải có tên (vd: Đỏ, Xanh...)`
+            );
+            hasError = true;
+            return;
+          }
+          if (isNaN(price) || price <= 0) {
+            alert(
+              `Biến thể "${color}" trong nhóm "${gName}" phải có giá > 0`
+            );
+            hasError = true;
+            return;
+          }
+          if (isNaN(qty) || qty < 0) {
+            alert(
+              `Biến thể "${color}" trong nhóm "${gName}" phải có số lượng >= 0`
+            );
+            hasError = true;
+            return;
+          }
+
+          variants[gName][color] = { price, quantity: qty, image: imgUrl };
+
+          if (fileInput?.files[0]) {
+            const f = fileInput.files[0];
+            const path = `variants/${Date.now()}_${f.name}`;
+            const task = uploadImageToStorage(f, path).then((url) => {
+              variants[gName][color].image = url;
+            });
+            uploadTasks.push(task);
+          }
         });
       });
-    }
-    document.getElementById("productFormModal").classList.remove("hidden");
-  }, { onlyOnce: true });
+
+    if (hasError) return;
+
+    // ===== Chờ tất cả upload ảnh biến thể xong =====
+    await Promise.all(uploadTasks);
+
+    // ===== Lưu vào Firebase =====
+    const data = {
+      name,
+      categoryId,
+      description,
+      imageUrl: mainImageUrl,
+      variants,
+    };
+    const productRef = editingProductId
+      ? ref(db, `product/${editingProductId}`)
+      : push(ref(db, "product"));
+
+    update(productRef, data)
+      .then(() => {
+        alert(editingProductId ? "Cập nhật thành công" : "Đã thêm sản phẩm");
+        closeProductModal();
+      })
+      .catch((e) => alert("Lỗi: " + e.message));
+  });
+
+// Hook vào showSection
+const oldShowSection = window.showSection || function () {};
+window.showSection = function (id) {
+  oldShowSection(id);
+  if (id === "products" && typeof manageProducts === "function")
+    manageProducts();
 };
 
-window.deleteProduct = function (id) {
-  if (confirm("Bạn muốn xoá sản phẩm này?")) {
-    remove(ref(db, `product/${id}`)).then(() => alert("Đã xoá."));
-  }
-};
-
-document.getElementById("productForm").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const name = document.getElementById("name").value;
-  const categoryId = document.getElementById("categoryId").value;
-  const imageFile = document.getElementById("imageFile").files[0];
-  const editId = document.getElementById("editId").value;
-  let imageUrl = "";
-
-  if (imageFile) {
-    const imgRef = storageRef(storage, `products/main_${Date.now()}_${imageFile.name}`);
-    const snap = await uploadBytes(imgRef, imageFile);
-    imageUrl = await getDownloadURL(snap.ref);
-  }
-
-  const sizeEls = document.getElementsByName("size");
-  const colorEls = document.getElementsByName("color");
-  const qtyEls = document.getElementsByName("qty");
-  const priceEls = document.getElementsByName("vprice");
-  const vimgEls = document.getElementsByName("vimage");
-  const variants = {};
-
-  for (let i = 0; i < sizeEls.length; i++) {
-    const size = sizeEls[i].value.trim();
-    const color = colorEls[i].value.trim();
-    const quantity = parseInt(qtyEls[i].value);
-    const price = parseFloat(priceEls[i].value);
-    let vimgUrl = "";
-
-    if (vimgEls[i].files[0]) {
-      const vRef = storageRef(storage, `variants/${Date.now()}_${vimgEls[i].files[0].name}`);
-      const vsnap = await uploadBytes(vRef, vimgEls[i].files[0]);
-      vimgUrl = await getDownloadURL(vsnap.ref);
-    }
-
-    if (!variants[size]) variants[size] = {};
-    variants[size][color] = { quantity, price, image: vimgUrl };
-  }
-
-  const data = { name, categoryId, variants };
-  if (imageUrl) data.imageUrl = imageUrl;
-
-  if (editId) {
-    await update(ref(db, `product/${editId}`), data);
-    alert("Đã cập nhật.");
-  } else {
-    const newRef = push(ref(db, "product"));
-    data.productId = newRef.key;
-    await set(newRef, data);
-    alert("Đã thêm sản phẩm.");
-  }
-
-  document.getElementById("productForm").reset();
-  document.getElementById("variantsContainer").innerHTML = "";
-  addVariantRow();
-  closeForm();
-});
 
 // // === ĐƠN HÀNG ===
 // let ordersListener = null;
@@ -1436,103 +1656,94 @@ window.addDemoProducts = function () {
 
 
 
-  let editBannerId = null;
-  let oldImageUrl = null;
+let editBannerId = null;
+let oldImageUrl = null;
 
-  // 🔹 Thêm banner
-  window.addBanner = async function () {
-    const file = document.getElementById("bannerImageFile").files[0];
-    if (!file) return alert("Vui lòng chọn ảnh!");
+// 🔹 Thêm banner
+window.addBanner = async function () {
+  const file = document.getElementById("bannerImageFile").files[0];
+  if (!file) return alert("Vui lòng chọn ảnh!");
 
-    const storageRef = sRef(storage, "banners/" + Date.now() + "_" + file.name);
-    await uploadBytes(storageRef, file);
-    const url = await getDownloadURL(storageRef);
+  const imgRef = storageRef(storage, "banners/" + Date.now() + "_" + file.name);
+  await uploadBytes(imgRef, file);
+  const url = await getDownloadURL(imgRef);
 
-    await set(push(ref(db, "banners")), { imageUrl: url });
-    resetForm();
-  };
+  await set(push(ref(db, "banners")), { imageUrl: url });
+  resetForm();
+};
 
-  // 🔹 Hiển thị danh sách banner
-  function loadBanners() {
-    onValue(ref(db, "banners"), (snapshot) => {
-      const list = document.getElementById("bannerList");
-      list.innerHTML = "";
-      snapshot.forEach((child) => {
-        const data = child.val();
-        const row = `
-          <tr>
-            <td class="border p-2"><img src="${data.imageUrl}" class="w-32"></td>
-            <td class="border p-2">
-              <button onclick="editBanner('${child.key}', '${data.imageUrl}')" class="bg-blue-500 text-white px-2 py-1 rounded">Sửa</button>
-              <button onclick="deleteBanner('${child.key}', '${data.imageUrl}')" class="bg-red-500 text-white px-2 py-1 rounded">Xóa</button>
-            </td>
-          </tr>
-        `;
-        list.innerHTML += row;
-      });
+// 🔹 Hiển thị danh sách banner
+function loadBanners() {
+  onValue(ref(db, "banners"), (snapshot) => {
+    const list = document.getElementById("bannerList");
+    list.innerHTML = "";
+    snapshot.forEach((child) => {
+      const data = child.val();
+      const row = `
+        <tr>
+          <td class="border p-2"><img src="${data.imageUrl}" class="w-32"></td>
+          <td class="border p-2">
+            <button onclick="editBanner('${child.key}', '${data.imageUrl}')" class="bg-blue-500 text-white px-2 py-1 rounded">Sửa</button>
+            <button onclick="deleteBanner('${child.key}', '${data.imageUrl}')" class="bg-red-500 text-white px-2 py-1 rounded">Xóa</button>
+          </td>
+        </tr>
+      `;
+      list.innerHTML += row;
     });
+  });
+}
+
+// 🔹 Sửa banner
+window.editBanner = function (id, imageUrl) {
+  editBannerId = id;
+  oldImageUrl = imageUrl;
+  document.getElementById("btnAddBanner").classList.add("hidden");
+  document.getElementById("btnUpdateBanner").classList.remove("hidden");
+  alert("Chọn ảnh mới nếu muốn thay đổi hình!");
+};
+
+// 🔹 Cập nhật banner
+window.updateBanner = async function () {
+  if (!editBannerId) return;
+
+  const file = document.getElementById("bannerImageFile").files[0];
+  if (!file) return alert("Vui lòng chọn ảnh mới!");
+
+  // Upload ảnh mới
+  const imgRef = storageRef(storage, "banners/" + Date.now() + "_" + file.name);
+  await uploadBytes(imgRef, file);
+  const url = await getDownloadURL(imgRef);
+
+  await update(ref(db, "banners/" + editBannerId), { imageUrl: url });
+  resetForm();
+};
+
+// 🔹 Xóa banner
+window.deleteBanner = async function (id, imageUrl) {
+  if (!confirm("Bạn có chắc muốn xóa banner này?")) return;
+
+  try {
+    const imgRef = storageRef(storage, imageUrl);
+    await deleteObject(imgRef);
+  } catch (err) {
+    console.warn("Không thể xóa ảnh:", err);
   }
 
-  // 🔹 Sửa banner
-  window.editBanner = function (id, imageUrl) {
-    editBannerId = id;
-    oldImageUrl = imageUrl;
-    document.getElementById("btnAddBanner").classList.add("hidden");
-    document.getElementById("btnUpdateBanner").classList.remove("hidden");
-    alert("Chọn ảnh mới nếu muốn thay đổi hình!");
-  };
+  await remove(ref(db, "banners/" + id));
+};
 
-  // 🔹 Cập nhật banner
-  window.updateBanner = async function () {
-    if (!editBannerId) return;
+// 🔹 Reset form
+function resetForm() {
+  document.getElementById("bannerImageFile").value = "";
+  document.getElementById("btnAddBanner").classList.remove("hidden");
+  document.getElementById("btnUpdateBanner").classList.add("hidden");
+  editBannerId = null;
+  oldImageUrl = null;
+}
 
-    const file = document.getElementById("bannerImageFile").files[0];
-    if (!file) return alert("Vui lòng chọn ảnh mới!");
+// 🔹 Tải danh sách khi load trang
+loadBanners();
 
-    // Xóa ảnh cũ
-    if (oldImageUrl) {
-      try {
-        const oldRef = sRef(storage, oldImageUrl);
-        await deleteObject(oldRef);
-      } catch (err) {
-        console.warn("Không xóa được ảnh cũ:", err);
-      }
-    }
-
-    // Upload ảnh mới
-    const storageRef = sRef(storage, "banners/" + Date.now() + "_" + file.name);
-    await uploadBytes(storageRef, file);
-    const url = await getDownloadURL(storageRef);
-
-    await update(ref(db, "banners/" + editBannerId), { imageUrl: url });
-    resetForm();
-  };
-
-  // 🔹 Xóa banner
-  window.deleteBanner = async function (id, imageUrl) {
-    if (!confirm("Bạn có chắc muốn xóa banner này?")) return;
-
-    try {
-      const imgRef = sRef(storage, imageUrl);
-      await deleteObject(imgRef);
-    } catch (err) {
-      console.warn("Không thể xóa ảnh:", err);
-    }
-
-    await remove(ref(db, "banners/" + id));
-  };
-
-  // 🔹 Reset form
-  function resetForm() {
-    document.getElementById("bannerImageFile").value = "";
-    document.getElementById("btnAddBanner").classList.remove("hidden");
-    document.getElementById("btnUpdateBanner").classList.add("hidden");
-    editBannerId = null;
-    oldImageUrl = null;
-  }
-
-  // 🔹 Tải danh sách khi load trang
-  loadBanners();
 
 
 
